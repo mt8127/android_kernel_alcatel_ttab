@@ -470,7 +470,8 @@ static void _WaitForEngineNotBusy(void)
 {
     int timeOut;
 #if ENABLE_DSI_INTERRUPT
-    long int time;
+   
+ long int time;
     static const long WAIT_TIMEOUT = 2 * HZ;    // 2 sec
 #endif
 

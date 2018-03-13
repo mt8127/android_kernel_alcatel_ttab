@@ -851,15 +851,18 @@ static int mtkfb_pan_display_impl(struct fb_var_screeninfo *var, struct fb_info 
         pr_info("[mtkfb] pan display set va=0x%x, pa=0x%x \n",(unsigned int)vaStart,paStart);
         Disp_Ovl_Engine_Set_layer_info(mtkfb_instance, &layerInfo);
 
-        layerInfo.layer_id = 1;
-        layerInfo.layer_enable = FALSE;
-        Disp_Ovl_Engine_Set_layer_info(mtkfb_instance, &layerInfo);
-        layerInfo.layer_id = 2;
-        layerInfo.layer_enable = FALSE;
-        Disp_Ovl_Engine_Set_layer_info(mtkfb_instance, &layerInfo);
-        layerInfo.layer_id = 3;
-        layerInfo.layer_enable = FALSE;
-        Disp_Ovl_Engine_Set_layer_info(mtkfb_instance, &layerInfo);
+        if(get_boot_mode() != FACTORY_BOOT)
+        {
+        	layerInfo.layer_id = 1;
+        	layerInfo.layer_enable = FALSE;
+        	Disp_Ovl_Engine_Set_layer_info(mtkfb_instance, &layerInfo);
+        	layerInfo.layer_id = 2;
+        	layerInfo.layer_enable = FALSE;
+        	Disp_Ovl_Engine_Set_layer_info(mtkfb_instance, &layerInfo);
+        	layerInfo.layer_id = 3;
+        	layerInfo.layer_enable = FALSE;
+        	Disp_Ovl_Engine_Set_layer_info(mtkfb_instance, &layerInfo);
+        }
     }
     #else
     mutex_lock(&OverlaySettingMutex);
@@ -1625,6 +1628,14 @@ static int mtkfb_set_overlay_layer(struct mtkfb_device *fbdev, struct fb_overlay
     MSG_FUNC_ENTER();
     MMProfileLogEx(MTKFB_MMP_Events.SetOverlayLayer, MMProfileFlagStart, (id<<16)|enable, (unsigned int)layerInfo->src_phy_addr);
 
+    // Check id is valid
+    if ((id < 0) || (id >= DDP_OVL_LAYER_MUN))
+    {
+        MTKFB_LOG("Invalid layer id:%d\n", id);
+        ret = -EFAULT;
+        goto LeaveOverlayMode;
+    }
+
     //BUG: check layer 3 format
     if((layerInfo->layer_id == 3) && (layerInfo->src_fmt != MTK_FB_FORMAT_ARGB8888))
     {
@@ -1982,7 +1993,7 @@ LeaveOverlayMode:
 static int mtkfb_get_overlay_layer_info(struct fb_overlay_layer_info* layerInfo)
 {
     DISP_LAYER_INFO layer;
-    if (layerInfo->layer_id >= DDP_OVL_LAYER_MUN)
+    if ((layerInfo->layer_id < 0) || (layerInfo->layer_id >= DDP_OVL_LAYER_MUN))
     {
          return 0;
     }
@@ -2422,7 +2433,7 @@ static int mtkfb_ioctl(struct file *file, struct fb_info *info, unsigned int cmd
             return -EFAULT;
         }
         MTKFB_LOG("MTKFB_GET_DISPLAY_IF_INFORMATION display_id=%d\n", displayid);
-        if (displayid > MTKFB_MAX_DISPLAY_COUNT) {
+        if ((displayid < 0) || (displayid >= MTKFB_MAX_DISPLAY_COUNT)) {
             MTKFB_LOG("[FB]: invalid display id:%d \n", displayid);
             return -EFAULT;
         }
@@ -3431,13 +3442,13 @@ static void mtkfb_shutdown(struct device *pdev)
     sem_early_suspend_cnt--;
 
     is_early_suspended = TRUE;
-    DISP_PrepareSuspend();
 
-    // Wait for disp finished.
-    if (wait_event_interruptible_timeout(_dsi_wait_vm_done_queue, !_IsEngineBusy(), HZ/10) == 0)
-    {
-        pr_info("[FB Driver] Wait disp finished timeout in early_suspend\n");
-    }
+    /* [FIXBUG]-Mod-BEGIN by TCTSZ.leo.guo, PR#1000254 2015/05/18, Fix FB suspend/resume DSI cause recovery reboot failed issue*/
+    DISP_PrepareSuspend();
+    if(wait_event_interruptible_timeout(_dsi_wait_vm_done_queue, !_IsEngineBusy(), HZ/10) == 0)
+		pr_err("[FB Driver] Wait disp finished timeout in early_suspend\n");
+    /* [FIXBUG]-Mod-END by TCTSZ.leo.guo, 2015/05/18*/
+
     DISP_CHECK_RET(DISP_PanelEnable(FALSE));
     DISP_CHECK_RET(DISP_PowerEnable(FALSE));
 

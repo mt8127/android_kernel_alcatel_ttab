@@ -132,7 +132,7 @@
 
 /*[BUGFIX]-Add-BEGIN by TCTSZ.pingao.yang, 4/15/2015,  */
 #define MAX_SUSPEND_CURRENT 420 // 42 mA
-#define MIN_SUSPEND_CURRENT 30  // 3 mA
+#define MIN_SUSPEND_CURRENT 0  // 0 mA
 #define DEFAUL_SUSPEND_CURRENT 120 //12mA
 #define SUSPEND_CURRENT_SETP 30 //3mA
 #define SLEEP_AFTER_FG_DIFF 3	// diff about 3%

@@ -39,14 +39,7 @@
  * variables
  ***************************************************************************/
 struct cust_mt65xx_led *bl_setting = NULL;
-/*[PLATFORM]-ADD-BEIGIN by falin.luo 2015.4.17*/
-/*hall sensor use bl brighrness to detect system status*/
-#ifdef CONFIG_MTK_HALL
-unsigned int bl_brightness = 102;
-#else
 static unsigned int bl_brightness = 102;
-#endif
-/*[PLATFORM]-ADD-END by falin.luo 2015.4.17*/
 static unsigned int bl_duty = 21;
 static unsigned int bl_div = CLK_DIV1;
 static unsigned int bl_frequency = 32000;

@@ -83,7 +83,10 @@ void Afe_Set_Reg(uint32 offset, uint32 value, uint32 mask)
     volatile uint32 *AFE_Register = (volatile uint32 *)address;
     volatile uint32 val_tmp;
 
-    //PRINTK_AFE_REG("Afe_Set_Reg offset=%x, value=%x, mask=%x \n",offset,value,mask);
+	if (offset > AFE_MAX_ADDR_OFFSET)
+		return;
+
+
     val_tmp = Afe_Get_Reg(offset);
     val_tmp &= (~mask);
     val_tmp |= (value & mask);
@@ -100,7 +103,11 @@ uint32 Afe_Get_Reg(uint32 offset)
     volatile uint32 address = (AFE_BASE + offset);
 #endif
     volatile uint32 *value;
-    //PRINTK_AFE_REG("Afe_Get_Reg offset=%x address = %x \n",offset,address);
+
+	if (offset > AFE_MAX_ADDR_OFFSET)
+		return 0;
+
+
     value = (volatile uint32 *)(address);
     return *value;
 }

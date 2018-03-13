@@ -343,8 +343,8 @@ static int g_block_size;
 static u32 PAGES_PER_BLOCK = 255;
 static bool g_bSyncOrToggle = false;
 static int g_iNFI2X_CLKSRC = ARMPLL;
-extern unsigned int flash_number;
-extern flashdev_info_t gen_FlashTable_p[MAX_FLASH];
+//extern unsigned int flash_number;
+//extern flashdev_info_t gen_FlashTable_p[MAX_FLASH];
 extern int part_num;
 
 #if CFG_2CS_NAND

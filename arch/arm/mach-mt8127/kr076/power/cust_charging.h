@@ -14,10 +14,6 @@
 #define MIN_CHARGE_TEMPERATURE_PLUS_X_DEGREE	4  //6 Fixed to 2 degree accoding to TCL standard
 #define MAX_LIMIT_CHARGE_TEMPERATURE    45
 #define MIN_LIMIT_CHARGE_TEMPERATURE    43
-/* [PLATFORM]-ADD-BEGIN by TCTSZ huichen@tcl.com, 05/21/2015,  BATTERY Notify PR-1007717*/
-#define MAX_RAISING_CHARGE_TEMPERATURE    58
-#define MIN_DROPPING_CHARGE_TEMPERATURE    -18
-/* [PLATFORM]-ADD-END by TCTSZ huichen@tcl.com*/
 #define ERR_CHARGE_TEMPERATURE  0xFF
 
 /* Linear Charging Threshold */
@@ -50,10 +46,7 @@
 #define BAT_LOW_TEMP_PROTECT_ENABLE         // stop charging if temp < MIN_CHARGE_TEMPERATURE
 /* [PLATFORM]-Add-END by TCTSZ.leo.guo */
 #define V_CHARGER_ENABLE 0				// 1:ON , 0:OFF	
-/* [PLATFORM]-MOD-BEGIN by TCTSZ huichen@tcl.com, 05/18/2015,  modify OVP function FR-1005346*/
-//#define V_CHARGER_MAX 6500				// 6.5 V
-#define V_CHARGER_MAX 6900				// 6.9 V
-/* [PLATFORM]-MOD-END by TCTSZ huichen@tcl.com, 05/18/2015*/
+#define V_CHARGER_MAX 6500				// 6.5 V
 #define V_CHARGER_MIN 4400				// 4.4 V
 
 /* Tracking TIME */

@@ -115,6 +115,22 @@ static ssize_t mt_printk_ctrl_write(struct file *filp, const char *ubuf, ssize_t
 	return cnt;
 }
 
+//[BUGFIX]-Add-BEGIN by SCDTABLET.(fangyou.wang),10/10/2015,1097303,                 
+//auto reboot after power off                                              
+void force_enable_uart_log(void)
+{
+	if(mt_need_uart_console){
+                pr_err("uart log alrady opened!!!!\n");
+		return;
+	}
+
+	mt_need_uart_console = 1;
+	mt_enable_uart();
+	pr_err("--------------need uart log,force open uart log now-------------\n");
+
+}
+//[BUGFIX]-Add-END by SCDTABLET.(fangyou.wang)
+
 static int __init init_mt_printk_ctrl(void)
 {
 	struct proc_dir_entry *pe;

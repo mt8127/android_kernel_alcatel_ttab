@@ -41,6 +41,7 @@
 #include <asm/thread_notify.h>
 #include <asm/stacktrace.h>
 #include <asm/mach/time.h>
+#include <asm/tls.h>
 #include <mach/system.h>
 
 #ifdef CONFIG_CC_STACKPROTECTOR
@@ -60,6 +61,10 @@ static const char *isa_modes[] = {
   "ARM" , "Thumb" , "Jazelle", "ThumbEE"
 };
 
+//[BUGFIX]-Add-BEGIN by SCDTABLET.(fangyou.wang),10/10/2015,1097303,                 
+//auto reboot after power off                                              
+extern void force_enable_uart_log(void);
+//[BUGFIX]-Add-END  by SCDTABLET.(fangyou.wang)
 #ifdef CONFIG_SMP
 void arch_trigger_all_cpu_backtrace(void)
 {
@@ -329,7 +334,11 @@ void machine_power_off(void)
 	/* Disable interrupts first */
 	local_irq_disable();
 	local_fiq_disable();
-	
+//[BUGFIX]-Add-BEGIN by SCDTABLET.(fangyou.wang),10/10/2015,1097303,                 
+//auto reboot after power off                                              
+	force_enable_uart_log();
+//[BUGFIX]-Add-END  by SCDTABLET.(fangyou.wang)
+
 	smp_send_stop();	
 	if(reboot_pid > 1)
 	{
@@ -632,7 +641,8 @@ copy_thread(unsigned long clone_flags, unsigned long stack_start,
 	clear_ptrace_hw_breakpoint(p);
 
 	if (clone_flags & CLONE_SETTLS)
-		thread->tp_value = childregs->ARM_r3;
+		thread->tp_value[0] = childregs->ARM_r3;
+	thread->tp_value[1] = get_tpuser();
 
 	thread_notify(THREAD_NOTIFY_COPY, thread);
 

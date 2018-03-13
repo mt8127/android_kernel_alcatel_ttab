@@ -564,7 +564,7 @@ static void hw_bc11_dump_register(void)
 	upmu_set_rg_usbdl_rst(1);		//force leave USBDL mode
    
 	#if defined(HIGH_BATTERY_VOLTAGE_SUPPORT)
-	fan5405_reg_config_interface(0x06,0x77); // ISAFE = 1250mA, VSAFE = 4.34V
+	fan5405_reg_config_interface(0x06,0x78); // ISAFE = 1250mA, VSAFE = 4.36V
 	#else
 	fan5405_reg_config_interface(0x06,0x70);
 	#endif
@@ -631,6 +631,7 @@ static void hw_bc11_dump_register(void)
 	kal_uint16 register_value;
 
 	register_value = charging_parameter_to_value(VBAT_CV_VTH, GETARRAYNUM(VBAT_CV_VTH) ,*(kal_uint32 *)(data));
+
 	fan5405_set_oreg(register_value); 
 
 	return status;

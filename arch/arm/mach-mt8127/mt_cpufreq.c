@@ -115,23 +115,23 @@ static struct early_suspend mt_cpufreq_early_suspend_handler =
 #define DVFS_F4     ( 598000)   // KHz
 
 #if defined(HQA_LV_1_09V)
-    #define DVFS_V0     (1200)  // mV
+    #define DVFS_V0     (1250)  // mV
     #define DVFS_V1     (1150)  // mV
     #define DVFS_V2     (1090)  // mV
     #define DVFS_V3     (1090)  // mV
 #elif defined(HQA_NV_1_15V)
     #define DVFS_V0     (1260)  // mV
-    #define DVFS_V1     (1200)  // mV
+    #define DVFS_V1     (1250)  // mV
     #define DVFS_V2     (1150)  // mV
     #define DVFS_V3     (1050)  // mV /*Not used */
 #elif defined(HQA_HV_1_21V)
     #define DVFS_V0     (1320)  // mV
-    #define DVFS_V1     (1210)  // mV
+    #define DVFS_V1     (1250)  // mV
     #define DVFS_V2     (1150)  // mV /*Not used */
     #define DVFS_V3     (1050)  // mV /*Not used */
 #else /* Normal case */
     #define DVFS_V0     (1300)  // mV
-    #define DVFS_V1     (1200)  // mV
+    #define DVFS_V1     (1250)  // mV
     #ifdef CPUFREQ_SDIO_TRANSFER
     #define DVFS_V2_0   (1185)  // mV
     #endif
@@ -1207,6 +1207,7 @@ static void mt_cpufreq_set(unsigned int freq_old, unsigned int freq_new, unsigne
         #ifdef MT_CPUFREQ_FHCTL
         if(((freq_new > FHCTL_CHANGE_FREQ) && (freq_old > FHCTL_CHANGE_FREQ)) || ((freq_new < FHCTL_CHANGE_FREQ) && (freq_old < FHCTL_CHANGE_FREQ)))
         {
+            dprintk("Before === FHCTL: freq_new = %d < freq_old = %d ===\n", freq_new, freq_old);            
             mt_dfs_armpll(freq_old, freq_new);
             dprintk("=== FHCTL: freq_new = %d > freq_old = %d ===\n", freq_new, freq_old);
 
@@ -1236,6 +1237,7 @@ static void mt_cpufreq_set(unsigned int freq_old, unsigned int freq_new, unsigne
         #ifdef MT_CPUFREQ_FHCTL
         if(((freq_new > FHCTL_CHANGE_FREQ) && (freq_old > FHCTL_CHANGE_FREQ)) || ((freq_new < FHCTL_CHANGE_FREQ) && (freq_old < FHCTL_CHANGE_FREQ)))
         {
+            dprintk("Before === FHCTL: freq_new = %d < freq_old = %d ===\n", freq_new, freq_old);
             mt_dfs_armpll(freq_old, freq_new);
             dprintk("=== FHCTL: freq_new = %d < freq_old = %d ===\n", freq_new, freq_old);
 
@@ -1547,7 +1549,13 @@ static int mt_cpufreq_target(struct cpufreq_policy *policy, unsigned int target_
     /******************************
     * set to the target freeuency
     *******************************/
-    mt_cpufreq_set(freqs.old, freqs.new, next.cpufreq_volt);
+    /* Get current frequency */
+    freqs.old = g_cur_freq;
+    
+    if (freqs.old != freqs.new)
+        mt_cpufreq_set(freqs.old, freqs.new, next.cpufreq_volt);
+    else
+        dprintk("CPU frequency from %d MHz to %d MHz (skipped) due to same frequency in critical seciton check\n", freqs.old / 1000, freqs.new / 1000);
 
     spin_unlock_irqrestore(&mt_cpufreq_lock, flags);
 

@@ -29,7 +29,7 @@
 #include <mach/dfo_boot_default.h>
 #include <linux/aee.h>
 #include <linux/mrdump.h>
-#ifdef CONFIG_MTK_MTD_NAND
+#if 0//#ifdef CONFIG_MTK_MTD_NAND
 #include <mach/nand_device_define.h>
 #include <mach/mt_partitioninfo.h>
 #endif
@@ -44,7 +44,7 @@ extern void adjust_kernel_cmd_line_setting_for_console(char*, char*);
 unsigned int mtk_get_max_DRAM_size(void);
 resource_size_t get_actual_DRAM_size(void);
 
-#ifdef CONFIG_MTK_MTD_NAND
+#if 0//#ifdef CONFIG_MTK_MTD_NAND
 struct tag_pt_info otp_info;
 struct tag_pt_info bmt_info;
 unsigned int flash_number;
@@ -1170,7 +1170,7 @@ static int __init parse_tag_devinfo_data_fixup(const struct tag *tags)
 	return 0;
 }
 
-#ifdef CONFIG_MTK_MTD_NAND
+#if 0//#ifdef CONFIG_MTK_MTD_NAND
 int __init parse_tag_partition_fixup(const struct tag *tags)
 {
 	
@@ -1278,7 +1278,7 @@ void mt_fixup(struct tag *tags, char **cmdline, struct meminfo *mi)
           g_meta_com_type = tags->u.meta_com.meta_com_type;
           g_meta_com_id = tags->u.meta_com.meta_com_id;
         } //FIXME_8127
-#ifdef CONFIG_MTK_MTD_NAND
+#if 0//#ifdef CONFIG_MTK_MTD_NAND
         else if(tags->hdr.tag == ATAG_OTP_INFO)
         {
             parse_tag_partition_fixup(tags);

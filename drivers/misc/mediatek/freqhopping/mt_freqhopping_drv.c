@@ -302,6 +302,10 @@ static ssize_t freqhopping_userdefine_proc_write(struct file *file, const char *
 	fh_ctl.ssc_setting.dds 		= p7;
 	fh_ctl.ssc_setting.freq		= 0;
 
+	/* Check validity of PLL ID */
+	if (fh_ctl.pll_id >= FH_PLL_COUNT)
+		return -1;
+
 
 	if( p1 == FH_CMD_ENABLE){
 		ret = mt_fh_enable_usrdef(&fh_ctl);
@@ -428,6 +432,10 @@ static ssize_t freqhopping_status_proc_write(struct file *file, const char *buff
 	fh_ctl.ssc_setting.upbnd= 0;
 	fh_ctl.ssc_setting.lowbnd= 0;
 
+	/* Check validity of PLL ID */
+	if (fh_ctl.pll_id >= FH_PLL_COUNT)
+		return -1;
+
 	if( p1 == 0){
 		mt_freqhopping_ioctl(NULL,FH_CMD_DISABLE,(unsigned long)(&fh_ctl));
 	}
@@ -446,7 +454,7 @@ static int freqhopping_debug_proc_read(struct seq_file* m, void* v)
     arg.m = m;
     arg.v = v;
     arg.pll = g_fh_drv_pll;
-    g_p_fh_hal_drv->ioctl(FH_IO_PROC_READ, &arg);
+    //g_p_fh_hal_drv->ioctl(FH_IO_PROC_READ, &arg);
     return 0;
 #else
 	FH_MSG("EN: %s",__func__);
@@ -528,6 +536,10 @@ static ssize_t freqhopping_debug_proc_write(struct file *file, const char *buffe
 	fh_ctl.ssc_setting.upbnd	= p6;
 	fh_ctl.ssc_setting.lowbnd	= p7;
 	fh_ctl.ssc_setting.freq		= 0;
+
+	/* Check validity of PLL ID */
+	if (fh_ctl.pll_id >= FH_PLL_COUNT)
+		return -1;
 
 
 	if (cmd < FH_CMD_INTERNAL_MAX_CMD) {
@@ -994,7 +1006,7 @@ int mt_freqhopping_devctl(unsigned int cmd, void* args)
         return 1;
     }
     
-	g_p_fh_hal_drv->ioctl(cmd, args);
+	//g_p_fh_hal_drv->ioctl(cmd, args);
     return 0;
     
 }

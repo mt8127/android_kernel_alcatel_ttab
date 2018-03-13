@@ -254,7 +254,7 @@
 #define T8EV5_SENSOR_ID                         0x1011
 #define GC2235_SENSOR_ID        0x2235
 #define OV8865_SENSOR_ID			  0x8865
-#define GC2355_SENSOR_ID			0x2355
+#define GC2355MIPI_SENSOR_ID			0x2355
 #define HI551_SENSOR_ID			    0x0551
 
 #define HI841_SENSOR_ID			    0x0841
@@ -302,7 +302,8 @@
 
 #define SENSOR_DRVNAME_OV5647_RAW   	"ov5647"
 #define SENSOR_DRVNAME_OV5648_MIPI_RAW   	"ov5648mipi"
-#define SENSOR_DRVNAME_OV5670_MIPI_RAW   	"ov5670mipi"
+#define SENSOR_DRVNAME_OV5670_MIPI_RAW   	"ov5670mipiraw"
+#define SENSOR_DRVNAME_OV56702ND_MIPI_RAW   	"ov56702ndmipiraw"
 #define SENSOR_DRVNAME_OV5693_MIPI_RAW     "ov5693mipi"
 #define SENSOR_DRVNAME_OV5642_MIPI_YUV    "ov5642mipiyuv"
 #define SENSOR_DRVNAME_OV5642_MIPI_RGB    "ov5642mipirgb"

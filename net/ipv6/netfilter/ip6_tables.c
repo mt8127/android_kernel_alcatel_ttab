@@ -195,12 +195,14 @@ get_entry(const void *base, unsigned int offset)
 
 /* All zeroes == unconditional rule. */
 /* Mildly perf critical (only if packet tracing is on) */
-static inline bool unconditional(const struct ip6t_ip6 *ipv6)
+static inline bool unconditional(const struct ip6t_entry *e)
 {
 	static const struct ip6t_ip6 uncond;
 
-	return memcmp(ipv6, &uncond, sizeof(uncond)) == 0;
+	return e->target_offset == sizeof(struct ip6t_entry) &&
+		memcmp(&e->ipv6, &uncond, sizeof(uncond)) == 0;
 }
+
 
 static inline const struct xt_entry_target *
 ip6t_get_target_c(const struct ip6t_entry *e)
@@ -255,11 +257,10 @@ get_chainname_rulenum(const struct ip6t_entry *s, const struct ip6t_entry *e,
 	} else if (s == e) {
 		(*rulenum)++;
 
-		if (s->target_offset == sizeof(struct ip6t_entry) &&
+		if (unconditional(s) &&
 		    strcmp(t->target.u.kernel.target->name,
 			   XT_STANDARD_TARGET) == 0 &&
-		    t->verdict < 0 &&
-		    unconditional(&s->ipv6)) {
+		    t->verdict < 0) {
 			/* Tail of chains: STANDARD target (return/policy) */
 			*comment = *chainname == hookname
 				? comments[NF_IP6_TRACE_COMMENT_POLICY]
@@ -477,11 +478,10 @@ mark_source_chains(const struct xt_table_info *newinfo,
 			e->comefrom |= ((1 << hook) | (1 << NF_INET_NUMHOOKS));
 
 			/* Unconditional return/END. */
-			if ((e->target_offset == sizeof(struct ip6t_entry) &&
+			if ((unconditional(e) &&
 			     (strcmp(t->target.u.user.name,
 				     XT_STANDARD_TARGET) == 0) &&
-			     t->verdict < 0 &&
-			     unconditional(&e->ipv6)) || visited) {
+			     t->verdict < 0) || visited) {
 				unsigned int oldpos, size;
 
 				if ((strcmp(t->target.u.user.name,
@@ -570,14 +570,12 @@ static void cleanup_match(struct xt_entry_match *m, struct net *net)
 }
 
 static int
-check_entry(const struct ip6t_entry *e, const char *name)
+check_entry(const struct ip6t_entry *e)
 {
 	const struct xt_entry_target *t;
 
-	if (!ip6_checkentry(&e->ipv6)) {
-		duprintf("ip_tables: ip check failed %p %s.\n", e, name);
+	if (!ip6_checkentry(&e->ipv6))
 		return -EINVAL;
-	}
 
 	if (e->target_offset + sizeof(struct xt_entry_target) >
 	    e->next_offset)
@@ -589,6 +587,7 @@ check_entry(const struct ip6t_entry *e, const char *name)
 
 	return 0;
 }
+
 
 static int check_match(struct xt_entry_match *m, struct xt_mtchk_param *par)
 {
@@ -668,10 +667,6 @@ find_check_entry(struct ip6t_entry *e, struct net *net, const char *name,
 	struct xt_mtchk_param mtpar;
 	struct xt_entry_match *ematch;
 
-	ret = check_entry(e, name);
-	if (ret)
-		return ret;
-
 	j = 0;
 	mtpar.net	= net;
 	mtpar.table     = name;
@@ -715,7 +710,7 @@ static bool check_underflow(const struct ip6t_entry *e)
 	const struct xt_entry_target *t;
 	unsigned int verdict;
 
-	if (!unconditional(&e->ipv6))
+	if (!unconditional(e))
 		return false;
 	t = ip6t_get_target_c(e);
 	if (strcmp(t->u.user.name, XT_STANDARD_TARGET) != 0)
@@ -735,9 +730,11 @@ check_entry_size_and_hooks(struct ip6t_entry *e,
 			   unsigned int valid_hooks)
 {
 	unsigned int h;
+	int err;
 
 	if ((unsigned long)e % __alignof__(struct ip6t_entry) != 0 ||
-	    (unsigned char *)e + sizeof(struct ip6t_entry) >= limit) {
+	    (unsigned char *)e + sizeof(struct ip6t_entry) >= limit ||
+	    (unsigned char *)e + e->next_offset > limit) {
 		duprintf("Bad offset %p\n", e);
 		return -EINVAL;
 	}
@@ -748,6 +745,10 @@ check_entry_size_and_hooks(struct ip6t_entry *e,
 			 e, e->next_offset);
 		return -EINVAL;
 	}
+
+	err = check_entry(e);
+	if (err)
+		return err;
 
 	/* Check hooks & underflows */
 	for (h = 0; h < NF_INET_NUMHOOKS; h++) {
@@ -1497,7 +1498,8 @@ check_compat_entry_size_and_hooks(struct compat_ip6t_entry *e,
 
 	duprintf("check_compat_entry_size_and_hooks %p\n", e);
 	if ((unsigned long)e % __alignof__(struct compat_ip6t_entry) != 0 ||
-	    (unsigned char *)e + sizeof(struct compat_ip6t_entry) >= limit) {
+	    (unsigned char *)e + sizeof(struct compat_ip6t_entry) >= limit ||
+	    (unsigned char *)e + e->next_offset > limit) {
 		duprintf("Bad offset %p, limit = %p\n", e, limit);
 		return -EINVAL;
 	}
@@ -1510,7 +1512,7 @@ check_compat_entry_size_and_hooks(struct compat_ip6t_entry *e,
 	}
 
 	/* For purposes of check_entry casting the compat entry is fine */
-	ret = check_entry((struct ip6t_entry *)e, name);
+	ret = check_entry((struct ip6t_entry *)e);
 	if (ret)
 		return ret;
 

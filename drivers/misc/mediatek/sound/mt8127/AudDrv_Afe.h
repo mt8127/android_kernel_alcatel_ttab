@@ -917,6 +917,8 @@ typedef struct
 #define AUDPLL_TUNER_EN_LEN      1
 #define AUDPLL_TUNER_EN_MASK     0x80000000
 
+/* The maximum address offset of Audio Front End */
+#define AFE_MAX_ADDR_OFFSET	(0x570)
 #define CLK_APLL_SEL_POS     16
 #define CLK_APLL_SEL_LEN     3
 #define CLKSQ_MUX_CK     0

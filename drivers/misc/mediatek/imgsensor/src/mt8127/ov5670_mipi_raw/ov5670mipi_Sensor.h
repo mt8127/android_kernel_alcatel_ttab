@@ -16,99 +16,132 @@
 #ifndef _OV5670MIPI_SENSOR_H
 #define _OV5670MIPI_SENSOR_H
 
+typedef enum group_enum {
+    PRE_GAIN=0,
+    CMMCLK_CURRENT,
+    FRAME_RATE_LIMITATION,
+    REGISTER_EDITOR,
+    GROUP_TOTAL_NUMS
+} FACTORY_GROUP_ENUM;
 
-typedef enum{
-	IMGSENSOR_MODE_INIT,
-	IMGSENSOR_MODE_PREVIEW,
-	IMGSENSOR_MODE_CAPTURE,
-	IMGSENSOR_MODE_VIDEO,
-} IMGSENSOR_MODE;
 
-typedef struct imgsensor_mode_struct {
-	kal_uint32 pclk;				//record different mode's pclk
-	kal_uint32 linelength;			//record different mode's linelength
-	kal_uint32 framelength;			//record different mode's framelength
+#define ENGINEER_START_ADDR 10
+#define FACTORY_START_ADDR 0
 
-	kal_uint8 startx;				//record different mode's startx of grabwindow
-	kal_uint8 starty;				//record different mode's startx of grabwindow
+typedef enum engineer_index
+{
+    CMMCLK_CURRENT_INDEX=ENGINEER_START_ADDR,
+    ENGINEER_END
+} FACTORY_ENGINEER_INDEX;
 
-	kal_uint16 grabwindow_width;	//record different mode's width of grabwindow
-	kal_uint16 grabwindow_height;	//record different mode's height of grabwindow
+typedef enum register_index
+{
+	SENSOR_BASEGAIN=FACTORY_START_ADDR,
+	PRE_GAIN_R_INDEX,
+	PRE_GAIN_Gr_INDEX,
+	PRE_GAIN_Gb_INDEX,
+	PRE_GAIN_B_INDEX,
+	FACTORY_END_ADDR
+} FACTORY_REGISTER_INDEX;
 
-	/*	 following for MIPIDataLowPwr2HighSpeedSettleDelayCount by different scenario	*/
-	kal_uint8 mipi_data_lp2hs_settle_dc;
+typedef struct
+{
+    SENSOR_REG_STRUCT	Reg[ENGINEER_END];
+    SENSOR_REG_STRUCT	CCT[FACTORY_END_ADDR];
+} SENSOR_DATA_STRUCT, *PSENSOR_DATA_STRUCT;
 
-	/*	 following for GetDefaultFramerateByScenario()	*/
-	kal_uint16 max_framerate;
+typedef enum {
+    SENSOR_MODE_INIT = 0,
+    SENSOR_MODE_PREVIEW,
+    SENSOR_MODE_VIDEO,
+    SENSOR_MODE_CAPTURE
+} OV5670_SENSOR_MODE;
+
+
+typedef struct
+{
+	kal_uint32 DummyPixels;
+	kal_uint32 DummyLines;
 	
-} imgsensor_mode_struct;
-
-/* SENSOR PRIVATE STRUCT FOR VARIABLES*/
-typedef struct imgsensor_struct {
-	kal_uint8 mirror;				//mirrorflip information
-
-	kal_uint8 sensor_mode;			//record IMGSENSOR_MODE enum value
-
-	kal_uint32 shutter;				//current shutter
-	kal_uint16 gain;				//current gain
+	kal_uint32 pvShutter;
+	kal_uint32 pvGain;
 	
-	kal_uint32 pclk;				//current pclk
-
-	kal_uint32 frame_length;		//current framelength
-	kal_uint32 line_length;			//current linelength
-
-	kal_uint32 min_frame_length;	//current min  framelength to max framerate
-	kal_uint16 dummy_pixel;			//current dummypixel
-	kal_uint16 dummy_line;			//current dummline
+	kal_uint32 pvPclk;  
+	kal_uint32 videoPclk;
+	kal_uint32 capPclk;
 	
-	kal_uint16 current_fps;			//current max fps
-	kal_bool   autoflicker_en;		//record autoflicker enable or disable
-	kal_bool test_pattern;			//record test pattern mode or not
-	MSDK_SCENARIO_ID_ENUM current_scenario_id;//current scenario id
-	kal_uint8  ihdr_en;				//ihdr enable or disable
-	
-	kal_uint8 i2c_write_id;			//record current sensor's i2c write id
-} imgsensor_struct;
+	kal_uint32 shutter;
 
-/* SENSOR PRIVATE STRUCT FOR CONSTANT*/
-typedef struct imgsensor_info_struct { 
-	kal_uint32 sensor_id;			//record sensor id defined in Kd_imgsensor.h
-	kal_uint32 checksum_value;		//checksum value for Camera Auto Test
-	imgsensor_mode_struct pre;		//preview scenario relative information
-	imgsensor_mode_struct cap;		//capture scenario relative information
-	imgsensor_mode_struct normal_video;//normal video  scenario relative information
-	
-	kal_uint8  ae_shut_delay_frame;	//shutter delay frame for AE cycle
-	kal_uint8  ae_sensor_gain_delay_frame;	//sensor gain delay frame for AE cycle
-	kal_uint8  ae_ispGain_delay_frame;	//isp gain delay frame for AE cycle
-	kal_uint8  sensor_mode_num;		//support sensor mode num
-	
-	kal_uint8  cap_delay_frame;		//enter capture delay frame num
-	kal_uint8  pre_delay_frame;		//enter preview delay frame num
-	kal_uint8  video_delay_frame;	//enter video delay frame num
-	kal_uint8  margin;				//sensor framelength & shutter margin 
-	kal_uint32 min_shutter;			//min shutter
-	kal_uint32 max_frame_length;	//max framelength by sensor register's limitation
+	kal_uint16 sensorGlobalGain;
+	kal_uint16 ispBaseGain;
+	kal_uint16 realGain;
 
-	kal_uint8  isp_driving_current;	//mclk driving current
-	kal_uint8  sensor_interface_type;//sensor_interface_type
-	kal_uint8  mipi_sensor_type; //0,MIPI_OPHY_NCSI2; 1,MIPI_OPHY_CSI2, default is NCSI2, don't modify this para
-	kal_uint8  mipi_settle_delay_mode; //0, high speed signal auto detect; 1, use settle delay,unit is ns, default is auto detect, don't modify this para
-	kal_uint8  sensor_output_dataformat;//sensor output first pixel color
-	kal_uint8  mclk;				//mclk value, suggest 24 or 26 for 24Mhz or 26Mhz
+	kal_int16 imgMirror;
+
+	OV5670_SENSOR_MODE sensorMode;
+
+	kal_bool OV5670AutoFlickerMode;
+	kal_bool OV5670VideoMode;
 	
-	kal_uint8  mipi_lane_num;		//mipi lane num
-	kal_uint8  i2c_addr_table[5];	//record sensor support all write id addr, only supprt 4must end with 0xff
-} imgsensor_info_struct;
+}OV5670_PARA_STRUCT,*POV5670_PARA_STRUCT;
 
-/* SENSOR READ/WRITE ID */
-//#define IMGSENSOR_WRITE_ID_1 (0x6c)
-//#define IMGSENSOR_READ_ID_1  (0x6d)
-//#define IMGSENSOR_WRITE_ID_2 (0x20)
-//#define IMGSENSOR_READ_ID_2  (0x21)
 
-extern int iReadRegI2C(u8 *a_pSendData , u16 a_sizeSendData, u8 * a_pRecvData, u16 a_sizeRecvData, u16 i2cId);
-extern int iWriteRegI2C(u8 *a_pSendData , u16 a_sizeSendData, u16 i2cId);
+    #define OV5670_SHUTTER_MARGIN 			(4)
+	#define OV5670_GAIN_BASE				(128)
+	#define OV5670_AUTOFLICKER_OFFSET_30 	(296)
+	#define OV5670_AUTOFLICKER_OFFSET_25 	(250)
+	#define OV5670_AUTOFLICKER_OFFSET_15 	(146)
+	#define OV5670_PREVIEW_PCLK 			(102850000)
+	#define OV5670_VIDEO_PCLK 				(OV5670_PREVIEW_PCLK)
+	#define OV5670_CAPTURE_PCLK 			(102850000)
+	
+	#define OV5670_MAX_FPS_PREVIEW			(300)
+	#define OV5670_MAX_FPS_VIDEO			(300)
+	#define OV5670_MAX_FPS_CAPTURE			(250)
+	//#define OV5670_MAX_FPS_N3D				(300)
+
+
+	//grab window
+	#define OV5670_IMAGE_SENSOR_PV_WIDTH					(1296)
+	#define OV5670_IMAGE_SENSOR_PV_HEIGHT					(972) //(960)
+	#define OV5670_IMAGE_SENSOR_VIDEO_WIDTH 				(OV5670_IMAGE_SENSOR_PV_WIDTH)
+	#define OV5670_IMAGE_SENSOR_VIDEO_HEIGHT				(OV5670_IMAGE_SENSOR_PV_HEIGHT)
+	#define OV5670_IMAGE_SENSOR_FULL_WIDTH					(2592)	
+	#define OV5670_IMAGE_SENSOR_FULL_HEIGHT 				(1944)
+
+	#define OV5670_FULL_X_START						    		(0)
+	#define OV5670_FULL_Y_START						    		(0)
+	#define OV5670_PV_X_START						    		(0)
+	#define OV5670_PV_Y_START						    		(0)
+	#define OV5670_VIDEO_X_START								(0)
+	#define OV5670_VIDEO_Y_START								(0)
+
+	#define OV5670_MAX_ANALOG_GAIN					(8)
+	#define OV5670_MIN_ANALOG_GAIN					(1)
+
+
+	/* SENSOR PIXEL/LINE NUMBERS IN ONE PERIOD */
+	#define OV5670_PV_PERIOD_PIXEL_NUMS 				0x068C	//1676*2=>3352
+	#define OV5670_PV_PERIOD_LINE_NUMS					0x07FD	//2045
+
+	#define OV5670_VIDEO_PERIOD_PIXEL_NUMS				OV5670_PV_PERIOD_PIXEL_NUMS
+	#define OV5670_VIDEO_PERIOD_LINE_NUMS				OV5670_PV_PERIOD_LINE_NUMS
+
+	#define OV5670_FULL_PERIOD_PIXEL_NUMS					0x07DC	//2012*2   25fps
+	#define OV5670_FULL_PERIOD_LINE_NUMS					0x07FD	//2045
+	
+	#define OV5670MIPI_WRITE_ID 	(0x6c)
+	#define OV5670MIPI_READ_ID	(0x6d)
+
+	#define OV5670MIPI_SENSOR_ID            OV5670_SENSOR_ID
+
+
+	UINT32 OV5670MIPIOpen(void);
+	UINT32 OV5670MIPIGetResolution(MSDK_SENSOR_RESOLUTION_INFO_STRUCT *pSensorResolution);
+	UINT32 OV5670MIPIGetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId, MSDK_SENSOR_INFO_STRUCT *pSensorInfo, MSDK_SENSOR_CONFIG_STRUCT *pSensorConfigData);
+	UINT32 OV5670MIPIControl(MSDK_SCENARIO_ID_ENUM ScenarioId, MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *pImageWindow, MSDK_SENSOR_CONFIG_STRUCT *pSensorConfigData);
+	UINT32 OV5670MIPIFeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId, UINT8 *pFeaturePara,UINT32 *pFeatureParaLen);
+	UINT32 OV5670MIPIClose(void);
 
 #endif 
 

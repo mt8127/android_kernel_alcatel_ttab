@@ -1766,7 +1766,8 @@ mtk_cfg80211_mgmt_frame_register (
 
         if (prGlueInfo->prAdapter != NULL){
 
-            prGlueInfo->ulFlag |= GLUE_FLAG_FRAME_FILTER_AIS;
+            /* prGlueInfo->ulFlag |= GLUE_FLAG_FRAME_FILTER_AIS; */
+			set_bit(GLUE_FLAG_FRAME_FILTER_AIS_BIT, &prGlueInfo->ulFlag);
 
             /* wake up main thread */
             wake_up_interruptible(&prGlueInfo->waitq);

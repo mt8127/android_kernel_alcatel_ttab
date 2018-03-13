@@ -427,7 +427,7 @@ static int mali_mem_os_shrink(struct shrinker *shrinker, struct shrink_control *
 #endif
 
 	if (0 == nr) {
-		//[BUGFIX]-Mod-BEGIN by SCDTABLET.zhangku.guo@tcl.com,06/09/2015,983716,mtk patch for fix ANR issue when TAT
+		//[BUGFIX]-Mod-BEGIN by SCDTABLET.zhangku.guo@tcl.com,06/09/2015,1017702,mtk patch for fix ANR issue when TAT
 		//return mali_mem_os_allocator.pool_count + mali_mem_page_table_page_pool.count;
 		return mali_mem_os_allocator.pool_count;
 		//[BUGFIX]-Mod-END by SCDTABLET.zhangku.guo@tcl.com
@@ -457,7 +457,7 @@ static int mali_mem_os_shrink(struct shrinker *shrinker, struct shrink_control *
 		mali_mem_os_free_page(page);
 	}
 
-	//[BUGFIX]-Del-BEGIN by SCDTABLET.zhangku.guo@tcl.com,06/09/2015,983716,mtk patch for fix ANR issue when TAT
+	//[BUGFIX]-Del-BEGIN by SCDTABLET.zhangku.guo@tcl.com,06/09/2015,1017702,mtk patch for fix ANR issue when TAT
 	/* Release some pages from page table page pool */
 	//mali_mem_os_trim_page_table_page_pool();
 	//[BUGFIX]-Del-END by SCDTABLET.zhangku.guo@tcl.com
@@ -468,7 +468,7 @@ static int mali_mem_os_shrink(struct shrinker *shrinker, struct shrink_control *
 		cancel_delayed_work(&mali_mem_os_allocator.timed_shrinker);
 	}
 
-	//[BUGFIX]-Mod-BEGIN by SCDTABLET.zhangku.guo@tcl.com,06/09/2015,983716,mtk patch for fix ANR issue when TAT
+	//[BUGFIX]-Mod-BEGIN by SCDTABLET.zhangku.guo@tcl.com,06/09/2015,1017702,mtk patch for fix ANR issue when TAT
 	//return mali_mem_os_allocator.pool_count + mali_mem_page_table_page_pool.count;
 	return mali_mem_os_allocator.pool_count;
 	//[BUGFIX]-Mod-END by SCDTABLET.zhangku.guo@tcl.com

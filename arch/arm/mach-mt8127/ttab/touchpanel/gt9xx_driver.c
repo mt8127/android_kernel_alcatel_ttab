@@ -93,6 +93,8 @@ extern char tpd_firmware_version_val[5];
 extern int tpd_config_version;
 extern int tpd_x_line;
 extern int tpd_y_line;
+extern u8 tpd_sensor_id;
+
 int gtp_autotool_setting;
 EXPORT_SYMBOL(gtp_autotool_setting);
 extern struct tpd_device *tpd;
@@ -232,8 +234,12 @@ struct input_dev *pen_dev;
 #if GTP_COMPATIBLE_MODE
 u8 driver_num = 0;
 u8 sensor_num = 0;
-u8 gtp_ref_retries = 0;
-u8 gtp_clk_retries = 0;
+/*[PLATFORM]-Add-BEGIN by falin.luo@tcl.com 2015/4/29*/
+/*change counter data type to u16, because GTP_CHK_FS_MNT_MAX is 300 */
+u16 gtp_ref_retries = 0;
+u16 gtp_clk_retries = 0;
+static u16 is_data_mounted = 0;
+/*[PLATFORM]-Add-NED   by falin.luo@tcl.com 2015/4/29*/
 CHIP_TYPE_T gtp_chip_type = CHIP_TYPE_GT9;
 u8 rqst_processing = 0;
 u8 is_950 = 0;
@@ -1220,6 +1226,7 @@ static s32 gtp_init_panel(struct i2c_client *client)
 
     cfg_len = cfg_info_len[sensor_id];
     tpd_config_version= send_cfg_buf[sensor_id][0];
+    tpd_sensor_id = sensor_id;
     GTP_INFO("CTP_CONFIG_GROUP%d used, config length: %d", sensor_id + 1, cfg_len);
 
     if (cfg_len < GTP_CONFIG_MIN_LENGTH)
@@ -1577,11 +1584,12 @@ static u8 gtp_bak_ref_proc(struct i2c_client *client, u8 mode)
 
     //check file-system mounted
     GTP_DEBUG("[gtp_bak_ref_proc]Waiting for FS %d", gtp_ref_retries);
-    if (gup_check_fs_mounted("/data") == FAIL)
+    if (/*gup_check_fs_mounted("/data") == FAIL*/!is_data_mounted)/*[PLATFORM]-MOD by falin.luo@tcl.com 2015/4/29*/
     {
         GTP_DEBUG("[gtp_bak_ref_proc]/data not mounted");
         if(gtp_ref_retries++ < GTP_CHK_FS_MNT_MAX)
         {
+        	msleep(100);/*[PLATFORM]-ADD by falin.luo@tcl.com 2015/4/29*/
             return FAIL;
         }
     }
@@ -1811,12 +1819,13 @@ static u8 gtp_main_clk_proc(struct i2c_client *client)
     u8  gtp_clk_buf[6] = {0};
     struct file *flp = NULL;
 
-    GTP_DEBUG("[gtp_main_clk_proc]Waiting for FS %d", gtp_ref_retries);
-    if (gup_check_fs_mounted("/data") == FAIL)
+    GTP_DEBUG("[gtp_main_clk_proc]Waiting for FS %d", gtp_clk_retries);/*[PLATFORM]-MOD by falin.luo@tcl.com 2015/4/29*/
+    if (/*gup_check_fs_mounted("/data") == FAIL*/!is_data_mounted)/*[PLATFORM]-MOD by falin.luo@tcl.com 2015/4/29*/
     {
         GTP_DEBUG("[gtp_main_clk_proc]/data not mounted");
         if(gtp_clk_retries++ < GTP_CHK_FS_MNT_MAX)
         {
+        	msleep(100);/*[PLATFORM]-ADD by falin.luo@tcl.com 2015/4/29*/
             return FAIL;
         }
         else
@@ -1951,8 +1960,10 @@ u8 gtp_hopping_proc(struct i2c_client *client, s32 mode)
     s32 ret = 0;
 
     GTP_DEBUG("Store hopping data, wait for /data mounted.");
-
-    ret = gup_check_fs_mounted("/data");
+	/*[PLATFORM]-MOD-BEGIN by falin.luo@tcl.com 2015/4/29*/
+//    ret = gup_check_fs_mounted("/data");
+	ret = is_data_mounted ? SUCCESS : FAIL;
+	/*[PLATFORM]-MOD-END by falin.luo@tcl.com 2015/4/29*/
 
     if (FAIL == ret)
     {
@@ -2496,11 +2507,42 @@ static ssize_t cfg_load_enable_store(struct device *dev,
 }
 static ssize_t cfg_load_enable_show(struct device *dev,
                     struct device_attribute *attr,
-                        const char *buf, size_t count)
+                        char *buf)
 {
-	return count;
+	return 1;
 }
 static  DEVICE_ATTR(cfg_load_enable, S_IRUGO|S_IWUSR, cfg_load_enable_show, cfg_load_enable_store);
+
+/*[PLATFORM]-Add-BEGIN by falin.luo@tcl.com 2015/4/29*/
+/*sys interface to get and set the data partition mount status*/
+#ifdef GTP_COMPATIBLE_MODE
+
+static ssize_t data_is_mount_store(struct device *dev,
+                    struct device_attribute *attr,
+                        const char *buf, size_t count)
+{
+	GTP_INFO("enter %s", __func__);
+
+	
+	is_data_mounted = ((buf[0] == '1') ? 1 : 0);
+
+	GTP_INFO("is_data_mount = %d, buf = %s", is_data_mounted, buf);
+
+	return count;
+}
+static ssize_t data_is_mount_show(struct device *dev,
+                    struct device_attribute *attr,
+                        char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "is_data_mounted = %d\n", is_data_mounted);
+}
+
+static DEVICE_ATTR(data_is_mount, 0644, data_is_mount_show, data_is_mount_store);
+
+#endif
+
+/*[PLATFORM]-Add-END by falin.luo@tcl.com 2015/4/29*/
+
 
 static struct miscdevice cfg_misc_device =
 {
@@ -2525,9 +2567,10 @@ static void buttons_timer_function(unsigned long data)
 static s32 tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
     s32 err = 0;
+#if 0
     s32 ret = 0;
-
     u16 version_info;
+#endif
 #if GTP_HAVE_TOUCH_KEY
     s32 idx = 0;
 #endif
@@ -2663,6 +2706,12 @@ static s32 tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *
     tpd_load_status = 1;
 #endif
 	misc_register(&cfg_misc_device);
+/*[PLATFORM]-Add-BEGIN by falin.luo@tcl.com 2015/4/29*/
+#ifdef GTP_COMPATIBLE_MODE
+	device_create_file(cfg_misc_device.this_device, &dev_attr_data_is_mount);
+#endif
+/*[PLATFORM]-Add-END by falin.luo@tcl.com 2015/4/29*/
+
 	device_create_file(cfg_misc_device.this_device, &dev_attr_cfg_load_enable);
     tpd_load_status = 1;
     return 0;

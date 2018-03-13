@@ -643,7 +643,7 @@ static void lcm_resume(void)
 #endif
 	lcm_init();
 }
-/*
+
 static unsigned int lcm_esd_test = FALSE;
 
 static unsigned int lcm_esd_check(void)
@@ -654,7 +654,7 @@ static unsigned int lcm_esd_check(void)
 	char  buffer[1];
 	int   array[4];
 	int ret = 0;
-	
+
 	if(lcm_esd_test)
 	{
 		lcm_esd_test = FALSE;
@@ -694,7 +694,7 @@ static unsigned int lcm_esd_recover(void)
 	lcm_init();
 	return TRUE;
 }
-*/
+
 static unsigned int lcm_compare_id(void)
 {
     unsigned int id1 = 0, id2 = 0, id = 0;
@@ -742,8 +742,8 @@ LCM_DRIVER a080ean01_dsi_vdo_lcm_drv =
     .init           = lcm_init,
     .suspend        = lcm_suspend,
     .resume         = lcm_resume,
-    //.esd_check   	= lcm_esd_check,
-   // .esd_recover    = lcm_esd_recover,
+    .esd_check   	= lcm_esd_check,
+	.esd_recover    = lcm_esd_recover,
 	.compare_id    = lcm_compare_id,
 };
 

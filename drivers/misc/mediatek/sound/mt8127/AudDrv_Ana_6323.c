@@ -70,6 +70,11 @@ void Ana_Set_Reg(uint32 offset, uint32 value, uint32 mask)
     int ret = 0;
 #ifdef AUDIO_USING_WRAP_DRIVER
     uint32 Reg_Value = Ana_Get_Reg(offset);
+
+	if (!(offset <= AUDTOP_MAX_ADDR_OFFSET ||
+		(offset >= ABB_AFE_ADDR_START && offset <= ABB_AFE_ADDR_END)))
+		return;
+
     Reg_Value &= (~mask);
     Reg_Value |= (value & mask);
     ret = pwrap_write(offset, Reg_Value);
@@ -86,6 +91,11 @@ uint32 Ana_Get_Reg(uint32 offset)
     // get pmic register
     int ret = 0;
     uint32 Rdata = 0;
+
+	if (!(offset <= AUDTOP_MAX_ADDR_OFFSET ||
+		(offset >= ABB_AFE_ADDR_START && offset <= ABB_AFE_ADDR_END)))
+		return 0;
+
 #ifdef AUDIO_USING_WRAP_DRIVER
     ret = pwrap_read(offset, &Rdata);
 #endif

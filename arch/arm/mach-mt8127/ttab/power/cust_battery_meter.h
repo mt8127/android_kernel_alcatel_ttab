@@ -13,6 +13,7 @@
 #define SOC_BY_SW_FG //oam
 #endif
 
+#define CUST_CAPACITY_OCV2CV_TRANSFORM
 //#define CONFIG_DIS_CHECK_BATTERY
 //#define FIXED_TBAT_25
 
@@ -79,24 +80,24 @@
 #define FG_METER_RESISTANCE 	0
 
 /* Qmax for battery  */
-#define Q_MAX_POS_50	3009
-#define Q_MAX_POS_25	3009
-#define Q_MAX_POS_0		3009
-#define Q_MAX_NEG_10	3009
+#define Q_MAX_POS_50	4060
+#define Q_MAX_POS_25	4060
+#define Q_MAX_POS_0		3400
+#define Q_MAX_NEG_10	2950
 
-#define Q_MAX_POS_50_H_CURRENT  2975
-#define Q_MAX_POS_25_H_CURRENT	2975
-#define Q_MAX_POS_0_H_CURRENT	2975
-#define Q_MAX_NEG_10_H_CURRENT	2975
+#define Q_MAX_POS_50_H_CURRENT  4000
+#define Q_MAX_POS_25_H_CURRENT	4020
+#define Q_MAX_POS_0_H_CURRENT	2760
+#define Q_MAX_NEG_10_H_CURRENT	2450
 
-
+/*[BUGFIX]-Add-BEGIN by TCTSZ.pingao.yang, 4/15/2015,  pr-975290,  change fg integration way */
 /* Discharge Percentage */
-#define OAM_D5		 1		//  1 : D5,   0: D2
-
+#define OAM_D5		 0		//  1 : D5,   0: D2
+/*[BUGFIX]-Add-end by TCTSZ.pingao.yang, 4/15/2015*/
 
 /* battery meter parameter */
 #define CUST_TRACKING_POINT  14
-#define CUST_R_SENSE         200
+#define CUST_R_SENSE         62  //Fixed sensor resistor according to HW designed.
 #define CUST_HW_CC 		    0
 #define AGING_TUNING_VALUE   100
 #define CUST_R_FG_OFFSET    23
@@ -129,5 +130,15 @@
 #define NORMAL_WAKEUP_PERIOD		5400 		//90 * 60 = 90 min
 #define LOW_POWER_WAKEUP_PERIOD		300		//5 * 60 = 5 min
 #define CLOSE_POWEROFF_WAKEUP_PERIOD	30	//30 s
+
+/*[BUGFIX]-Add-BEGIN by TCTSZ.pingao.yang, 4/15/2015,  */
+#define MAX_SUSPEND_CURRENT 420 // 42 mA
+#define MIN_SUSPEND_CURRENT 0  // 0 mA
+#define DEFAUL_SUSPEND_CURRENT 120 //12mA
+#define SUSPEND_CURRENT_SETP 30 //3mA
+#define SLEEP_AFTER_FG_DIFF 3	// diff about 3%
+#define UI_REDUCE_CURRENT 180 //18mA
+#define SLEEP_REDUCE_CURRENT 60 //6mA
+/*[BUGFIX]-Add-END by TCTSZ.pingao.yang */
 
 #endif	//#ifndef _CUST_BATTERY_METER_H

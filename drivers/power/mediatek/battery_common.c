@@ -69,6 +69,7 @@
 #include <cust_charging.h>
 #include <mach/upmu_common.h>
 #include <mach/upmu_hw.h>
+#include <mach/upmu_sw.h>
 #include <mach/charging.h>
 #include <mach/battery_common.h>
 #include <mach/battery_meter.h>
@@ -88,8 +89,6 @@
 /* Battery Logging Entry */
 /* ////////////////////////////////////////////////////////////////////////////// */
 int Enable_BATDRV_LOG = BAT_LOG_CRTI;
-/* static struct proc_dir_entry *proc_entry; */
-char proc_bat_data[32];
 
 /* ///////////////////////////////////////////////////////////////////////////////////////// */
 /* // Smart Battery Structure */
@@ -437,15 +436,17 @@ EXPORT_SYMBOL(wake_up_bat);
 
 static ssize_t bat_log_write(struct file *filp, const char __user *buff, size_t len, loff_t *data)
 {
-	if (copy_from_user(&proc_bat_data, buff, len)) {
+	char proc_bat_data;
+
+	if ((len <= 0) || copy_from_user(&proc_bat_data, buff, 1)) {
 		battery_xlog_printk(BAT_LOG_FULL, "bat_log_write error.\n");
 		return -EFAULT;
 	}
 
-	if (proc_bat_data[0] == '1') {
+	if (proc_bat_data == '1') {
 		battery_xlog_printk(BAT_LOG_CRTI, "enable battery driver log system\n");
 		Enable_BATDRV_LOG = 1;
-	} else if (proc_bat_data[0] == '2') {
+	} else if (proc_bat_data == '2') {
 		battery_xlog_printk(BAT_LOG_CRTI, "enable battery driver log system:2\n");
 		Enable_BATDRV_LOG = 2;
 	} else {
@@ -1828,8 +1829,11 @@ static void battery_update(struct battery_data *bat_data)
 
 	battery_xlog_printk(BAT_LOG_CRTI, "UI_SOC=(%d), resetBatteryMeter=(%d)\n",
 			    BMT_status.UI_SOC, resetBatteryMeter);
-			    
-  #ifdef CUST_CAPACITY_OCV2CV_TRANSFORM
+
+/*[BUGFIX]-Add-BEGIN by TCTSZ.pingao.yang, 4/15/2015,  pr-975290,  add standby current */
+	pre_timer_counter = cur_timer_counter;
+/*[BUGFIX]-Add-END by TCTSZ.pingao.yang */
+#ifdef CUST_CAPACITY_OCV2CV_TRANSFORM
     //restore battery UI capacity to rtc
     if (battery_meter_get_battery_soc() <= 1) {
         set_rtc_spare_fg_value(1);
@@ -1838,10 +1842,6 @@ static void battery_update(struct battery_data *bat_data)
         set_rtc_spare_fg_value(battery_meter_get_battery_soc());  /*use battery_soc*/
     }
 #else
-
-/*[BUGFIX]-Add-BEGIN by TCTSZ.pingao.yang, 4/15/2015,  pr-975290,  add standby current */
-	pre_timer_counter = cur_timer_counter;
-/*[BUGFIX]-Add-END by TCTSZ.pingao.yang */
 
 	/* set RTC SOC to 1 to avoid SOC jump in charger boot. */
 	if (BMT_status.UI_SOC <= 1) {
@@ -2436,7 +2436,7 @@ static void mt_battery_CheckBatteryStatus(void)
 		BMT_status.bat_charging_state = CHR_ERROR;
 		return;
 	}
-	battery_xlog_printk(BAT_LOG_CRTI, "[BATTERY]BMT_status.charger_vol = %d\r\n",BMT_status.charger_vol );
+
 	if (mt_battery_CheckChargerVoltage() != PMU_STATUS_OK) {
 		BMT_status.bat_charging_state = CHR_ERROR;
 		return;
@@ -2522,35 +2522,35 @@ static void mt_battery_notify_VBatTemp_check(void)
 #if defined(BATTERY_NOTIFY_CASE_0002_VBATTEMP)
 
 	if (BMT_status.temperature >= MAX_CHARGE_TEMPERATURE) {
-		/* [PLATFORM]-ADD-BEGIN by TCTSZ huichen@tcl.com, 05/21/2015,  BATTERY Notify PR-1007717*/
+		/* [PLATFORM]-ADD-BEGIN by TCTSZ leo.guo, 06/09/2015,  BATTERY Notify PR-1018754*/
 		if(BMT_status.temperature >= MAX_RAISING_CHARGE_TEMPERATURE)
-			g_BatteryNotifyCode |= 0x0040;
+			g_BatteryNotifyCode |= (0x0040 | (!!BMT_status.charger_exist) << 8);
 		else
-		g_BatteryNotifyCode |= 0x0002;
-		/* [PLATFORM]-ADD-END by TCTSZ huichen@tcl.com*/
+			g_BatteryNotifyCode |= (0x0002 | (!!BMT_status.charger_exist) << 8);
+		/* [PLATFORM]-ADD-END by TCTSZ leo.guo*/
 		battery_xlog_printk(BAT_LOG_CRTI, "[BATTERY] bat_temp(%d) out of range(too high)\n",
 				    BMT_status.temperature);
 	}
 #if defined(CONFIG_MTK_JEITA_STANDARD_SUPPORT)
 	else if (BMT_status.temperature < TEMP_NEG_10_THRESHOLD) {
-		/* [PLATFORM]-ADD-BEGIN by TCTSZ huichen@tcl.com, 05/21/2015,  BATTERY Notify PR-1007717*/
+		/* [PLATFORM]-ADD-BEGIN by TCTSZ leo.guo, 06/09/2015,  BATTERY Notify PR-1018754*/
 		if(BMT_status.temperature <= MIN_DROPPING_CHARGE_TEMPERATURE)
-			g_BatteryNotifyCode |= 0x0080;
+			g_BatteryNotifyCode |= (0x0080 | (!!BMT_status.charger_exist) << 8);
 		else
-			g_BatteryNotifyCode |= 0x0020;
-		/* [PLATFORM]-ADD-END by TCTSZ huichen@tcl.com*/
+			g_BatteryNotifyCode |= (0x0020 | (!!BMT_status.charger_exist) << 8);
+		/* [PLATFORM]-ADD-END by TCTSZ leo.guo*/
 		battery_xlog_printk(BAT_LOG_CRTI, "[BATTERY] bat_temp(%d) out of range(too low)\n",
 				    BMT_status.temperature);
 	}
 #else
 #ifdef BAT_LOW_TEMP_PROTECT_ENABLE
 	else if (BMT_status.temperature < MIN_CHARGE_TEMPERATURE) {
-		/* [PLATFORM]-ADD-BEGIN by TCTSZ huichen@tcl.com, 05/21/2015,  BATTERY Notify PR-1007717*/
+		/* [PLATFORM]-ADD-BEGIN by TCTSZ leo.guo, 06/09/2015,  BATTERY Notify PR-1018754*/
 		if(BMT_status.temperature <= MIN_DROPPING_CHARGE_TEMPERATURE)
-			g_BatteryNotifyCode |= 0x0080;
+			g_BatteryNotifyCode |= (0x0080 | (!!BMT_status.charger_exist) << 8);
 		else
-			g_BatteryNotifyCode |= 0x0020;
-		/* [PLATFORM]-ADD-END by TCTSZ huichen@tcl.com*/
+			g_BatteryNotifyCode |= (0x0020 | (!!BMT_status.charger_exist) << 8);
+		/* [PLATFORM]-ADD-END by TCTSZ leo.guo*/
 		battery_xlog_printk(BAT_LOG_CRTI, "[BATTERY] bat_temp(%d) out of range(too low)\n",
 				    BMT_status.temperature);
 	}
@@ -2679,22 +2679,12 @@ static void mt_battery_thermal_check(void)
 
 					if (BMT_status.charger_exist == KAL_TRUE) {
 						/* can not power down due to charger exist, so need reset system */
-/* [PLATFORM]-MOD-BEGIN by TCTSZ huichen@tcl.com, 05/19/2015,  modify NTC shutdown mode*/
-						//shutdown by system
-						#if 0
 						battery_charging_control
 						    (CHARGING_CMD_SET_PLATFORM_RESET, NULL);
-						#endif
 					}
 					/* avoid SW no feedback */
-//					battery_charging_control(CHARGING_CMD_SET_POWER_OFF, NULL);
+					battery_charging_control(CHARGING_CMD_SET_POWER_OFF, NULL);
 					/* mt_power_off(); */
-					if((g_platform_boot_mode==KERNEL_POWER_OFF_CHARGING_BOOT) || g_platform_boot_mode==LOW_POWER_OFF_CHARGING_BOOT)
-						{
-						//in KPOC mode ,shutdown by kernel
-						battery_charging_control(CHARGING_CMD_SET_POWER_OFF, NULL);
-						}
-/* [PLATFORM]-MOD-BEGIN by TCTSZ huichen@tcl.com, 05/19/2015*/
 				}
 			}
 #endif
@@ -2987,6 +2977,7 @@ void BAT_thread(void)
 	/*[BUGFIX]-Add-END by TCTSZ.pingao.yang */
 
 	}
+
 	mt_battery_charger_detect_check();
 	mt_battery_GetBatteryData();
 	if (BMT_status.charger_exist == KAL_TRUE) {
@@ -3007,9 +2998,26 @@ void BAT_thread(void)
 /* ///////////////////////////////////////////////////////////////////////////////////////// */
 /* // Internal API */
 /* ///////////////////////////////////////////////////////////////////////////////////////// */
+
+#ifdef BATTERY_CDP_WORKAROUND
+extern kal_bool is_charger_detection_rdy(void);
+#endif
+
 int bat_thread_kthread(void *x)
 {
 	ktime_t ktime = ktime_set(3, 0);	/* 10s, 10* 1000 ms */
+
+	
+#ifdef BATTERY_CDP_WORKAROUND
+		if(is_charger_detection_rdy()==KAL_FALSE){
+			printk("xiaohu_cdp:CDP, block\n");
+			wait_event(bat_thread_wq, (is_charger_detection_rdy()==KAL_TRUE));
+			printk("xiaohu_cdp:CDP, free\n");
+		}else{
+			printk("xiaohu_cdp:CDP, PASS\n");
+		}
+#endif
+
 
 	/* Run on a process content */
 	while (1) {

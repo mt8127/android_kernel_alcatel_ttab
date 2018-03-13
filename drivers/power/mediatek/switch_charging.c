@@ -76,6 +76,11 @@ kal_bool is_ta_connect = KAL_FALSE;
 kal_bool ta_vchr_tuning = KAL_TRUE;
 int ta_v_chr_org = 0;
 #endif
+/* [PLATFORM]-Add-BEGIN by TCTSZ.leo.guo, 04/15/2015,  modify ntc temperature function */
+#ifdef MTK_BATTERY_PROTECT_FEATURE
+kal_bool high_temp_stop_charge = KAL_FALSE;
+#endif
+/* [PLATFORM]-Add-END by TCTSZ.leo.guo */
 
   /* ///////////////////////////////////////////////////////////////////////////////////////// */
   /* // JEITA */
@@ -314,7 +319,7 @@ static BATTERY_VOLTAGE_ENUM select_jeita_cv(void)
 		cv_voltage = JEITA_TEMP_POS_45_TO_POS_60_CV_VOLTAGE;
 	} else if (g_temp_status == TEMP_POS_10_TO_POS_45) {
 #ifdef HIGH_BATTERY_VOLTAGE_SUPPORT
-		cv_voltage = BATTERY_VOLT_04_340000_V;
+		cv_voltage = BATTERY_VOLT_04_360000_V;
 #else
 		cv_voltage = JEITA_TEMP_POS_10_TO_POS_45_CV_VOLTAGE;
 #endif
@@ -655,15 +660,30 @@ void select_charging_curret(void)
 
 static kal_uint32 charging_full_check(void)
 {
-	kal_uint32 status;
+	kal_uint32 status = KAL_FALSE;
 
 	battery_charging_control(CHARGING_CMD_GET_CHARGING_STATUS, &status);
 	if (status == KAL_TRUE) {
 		g_full_check_count++;
-		if (g_full_check_count >= FULL_CHECK_TIMES) {
+		if (g_full_check_count >= FULL_CHECK_TIMES){
+/* [PLATFORM]-Add-BEGIN by TCTSZ.leo.guo, 04/15/2015,  modify ntc temperature function */
+#ifdef MTK_BATTERY_PROTECT_FEATURE
+			if (BMT_status.temperature < MAX_LIMIT_CHARGE_TEMPERATURE) {
+				return KAL_TRUE;
+			}
+			else {
+				high_temp_stop_charge = KAL_TRUE;
+				return KAL_FALSE;
+			}
+#else
 			return KAL_TRUE;
-		} else
+
+#endif
+/* [PLATFORM]-Add-END by TCTSZ.leo.guo */
+		}
+		else{
 			return KAL_FALSE;
+		}
 	} else {
 		g_full_check_count = 0;
 		return status;
@@ -738,10 +758,21 @@ static void pchr_turn_on_charging(void)
 			/*Set CV Voltage */
 #if !defined(CONFIG_MTK_JEITA_STANDARD_SUPPORT)
 #ifdef HIGH_BATTERY_VOLTAGE_SUPPORT
-			cv_voltage = BATTERY_VOLT_04_340000_V;
+			cv_voltage = BATTERY_VOLT_04_360000_V;
 #else
 			cv_voltage = BATTERY_VOLT_04_200000_V;
 #endif
+/* [PLATFORM]-Add-BEGIN by TCTSZ.leo.guo, 05/28/2015,  modify ntc temperature function */
+#ifdef MTK_BATTERY_PROTECT_FEATURE
+/*Battery temperature more than 45 degree or less than 55 degree, try to limit max voltage*/
+			if((BMT_status.temperature >= MAX_LIMIT_CHARGE_TEMPERATURE) && (BMT_status.temperature <= MAX_CHARGE_TEMPERATURE) )
+			{
+				cv_voltage = BATTERY_VOLT_04_100000_V;
+				battery_xlog_printk(BAT_LOG_CRTI,
+					"[BATTERY] temperature more than 45 degree or less than 55 degree, try to limit max voltage !\r\n");
+			}
+#endif
+/* [PLATFORM]-Add-END by TCTSZ.leo.guo */
 			battery_charging_control(CHARGING_CMD_SET_CV_VOLTAGE, &cv_voltage);
 #endif
 		}

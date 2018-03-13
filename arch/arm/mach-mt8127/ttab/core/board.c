@@ -619,8 +619,8 @@ struct msdc_hw msdc1_hw = {
     .data_pins      = 4,
     .data_offset    = 0,
 #ifdef CUST_EINT_MSDC1_INS_NUM
-    .flags          = MSDC_SYS_SUSPEND | MSDC_WP_PIN_EN | MSDC_CD_PIN_EN | MSDC_REMOVABLE | MSDC_HIGHSPEED | MSDC_UHS1 |MSDC_DDR |MSDC_SD_NEED_POWER,
-    
+    .flags          = MSDC_SYS_SUSPEND | MSDC_WP_PIN_EN | MSDC_CD_PIN_EN | MSDC_REMOVABLE | MSDC_HIGHSPEED | MSDC_UHS1 |MSDC_DDR, //|MSDC_SD_NEED_POWER,
+    //[BUGFIX]Added-by SZTCT.leo.guo 05.25.2015, Fixed TF card power control issue.
 #else
     .flags          = MSDC_SYS_SUSPEND | MSDC_WP_PIN_EN | MSDC_HIGHSPEED | MSDC_UHS1 |MSDC_DDR,   
 #endif

@@ -5328,24 +5328,9 @@ static int __init hdmi_init(void)
 {
     int ret = 0;
     int tmp_boot_mode;
-	//[BUGFIX]-Add-BEGIN by SCDTABLET.jinghuang@tcl.com,19/5/2015,
-	//add the function to check if hdmi power is on.
-	int hdmi_power=-1;
-	//[BUGFIX]-Mod-END by SCDTABLET.jinghuang@tcl.com
+
     printk("[hdmi]%s\n", __func__);
-	//[BUGFIX]-Add-BEGIN by SCDTABLET.jinghuang@tcl.com,19/5/2015,
-	//add the function to check if hdmi power is on.
-	mt_set_gpio_mode(GPIO87,GPIO_MODE_00);  // gpio mode   high
-	mt_set_gpio_dir(GPIO87,GPIO_DIR_OUT);	//OUT
-	hdmi_power=mt_get_gpio_out(GPIO87);
-	if(hdmi_power==0)
-		{
-		printk("[hdmi]check: hdmi power is off,power on again \n");
-		mt_set_gpio_out(GPIO87,GPIO_OUT_ONE);//OUT h
-	}else{
-			printk("[hdmi]check: hdmi power is already on \n");
-	}
-	//[BUGFIX]-Mod-END by SCDTABLET.jinghuang@tcl.com
+
     if (platform_driver_register(&hdmi_driver))
     {
         printk("[hdmi]failed to register hdmitx driver\n");

@@ -169,10 +169,6 @@ kal_uint16 HI708_read_cmos_sensor(kal_uint8 addr)
     return get_byte;
 }
 
-static int CAPTURE_FLAG = 0;
-static int CAPTUREA_FLAG = 0;
-static int CAPTUREB_FLAG = 0;//Add By Jason
-
 #define HI708_LOAD_FROM_T_FLASH
 #ifdef HI708_LOAD_FROM_T_FLASH
 
@@ -1562,7 +1558,7 @@ static UINT32 HI708Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
 
     SENSORDB("[Exit]:HI708 preview func\n");
    
-   //HI708_night_mode(HI708_sensor.night_mode);
+   HI708_night_mode(HI708_sensor.night_mode);
     return TRUE; 
 }	/* HI708_Preview */
 
@@ -1586,9 +1582,6 @@ kal_uint32 CapShutter;
   HI708_write_cmos_sensor(0x84, (CapShutter >> 8) & 0xFF);
   HI708_write_cmos_sensor(0x85, CapShutter & 0xFF);  
   #endif
-  CAPTURE_FLAG = 1;
-  CAPTUREA_FLAG = 1;
-  CAPTUREB_FLAG = 1;//Add By Jason
     return ERROR_NONE;
 }	/* HM3451Capture() */
 
@@ -2194,8 +2187,6 @@ UINT32 HI708YUVSensorSetting(FEATURE_ID iCmd, UINT32 iPara)
     switch (iCmd) 
     {
     case FID_SCENE_MODE:	    //auto mode or night mode
-    if( CAPTURE_FLAG == 0)
-    	{
         if (iPara == SCENE_MODE_OFF)//auto mode
         {
             HI708_night_mode(FALSE); 
@@ -2204,11 +2195,6 @@ UINT32 HI708YUVSensorSetting(FEATURE_ID iCmd, UINT32 iPara)
         {
             HI708_night_mode(TRUE); 
         }	
-    	}
-	else
-		{
-	CAPTURE_FLAG = 0;
-		}
         break; 	    
     case FID_AWB_MODE:
         HI708_set_param_wb(iPara);
@@ -2216,18 +2202,11 @@ UINT32 HI708YUVSensorSetting(FEATURE_ID iCmd, UINT32 iPara)
     case FID_COLOR_EFFECT:
         HI708_set_param_effect(iPara);
         break;
-    case FID_AE_EV:	    	
-		if( CAPTUREA_FLAG == 0)
+    case FID_AE_EV:	    	    
         HI708_set_param_exposure(iPara);
-		else
-		  	CAPTUREA_FLAG = 0;
         break;
-    case FID_AE_FLICKER:	    	  
-		
-		  if( CAPTUREB_FLAG == 0)
+    case FID_AE_FLICKER:	    	    	    
         HI708_set_param_banding(iPara);
-		  else
-		  	CAPTUREB_FLAG = 0;
         break;
     case FID_ZOOM_FACTOR:
         spin_lock(&hi708_yuv_drv_lock);

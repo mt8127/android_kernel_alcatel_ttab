@@ -142,31 +142,28 @@ static void init_lcm_registers(void)
 #else    
 	//printk("[IND][K] y_____1%s\n", __func__);
 #endif
-	//[BUGFIX]-Mod-BEGIN by SCDTABLET.jinghuang@tcl.com,05/21/2015,1008656£¬
-	//import gamma2.2 V1 parameters.
-	data_array[0] = 0x77801500;	
+
+	data_array[0] = 0x47801500;	
 	dsi_set_cmdq(&data_array, 1, 1);	
 	MDELAY(1);	
-	data_array[0] = 0x77811500;	
+	data_array[0] = 0x40811500;	
 	dsi_set_cmdq(&data_array, 1, 1);	
 	MDELAY(1);	
-	data_array[0] = 0xa8821500;	
+	data_array[0] = 0x04821500;	
 	dsi_set_cmdq(&data_array, 1, 1);	
 	MDELAY(1);	
-	data_array[0] = 0xfe831500;	
+	data_array[0] = 0x77831500;	
 	dsi_set_cmdq(&data_array, 1, 1);	
 	MDELAY(1);	
-	data_array[0] = 0xb0841500;	
+	data_array[0] = 0x0F841500;	
 	dsi_set_cmdq(&data_array, 1, 1);	
 	MDELAY(1);	
-	data_array[0] = 0x77851500;	
+	data_array[0] = 0x70851500;	
 	dsi_set_cmdq(&data_array, 1, 1);	
 	MDELAY(1);	
-	data_array[0] = 0x77861500;	
+	data_array[0] = 0x70861500;	
 	dsi_set_cmdq(&data_array, 1, 1);	
 	MDELAY(1);
-	//[BUGFIX]-Mod-END by SCDTABLET.jinghuang@tcl.com
-
 	
 }
 
@@ -321,7 +318,7 @@ static unsigned int lcm_esd_check(void)
 	read_reg_v2(0x81, buffer, 1);
 	//printk("\n ZERO] [0x81]=0x%02x\n", buffer[0]);
 
-	if(buffer[0] != 0x77)
+	if(buffer[0] != 0x40)
 	{
 		printk("[LCM ERROR] [0x81]=0x%02x\n", buffer[0]);
 		return TRUE;

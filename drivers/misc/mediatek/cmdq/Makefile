@@ -10,6 +10,10 @@ ccflags-y += -I$(srctree)/drivers/misc/mediatek/cmdq/$(MTK_PLATFORM) \
 # Enable MET
 ccflags-y += -DMET_USER_EVENT_SUPPORT
 
+ifneq ($(TARGET_BUILD_VARIANT),user)
+ccflags-y += -D_CMDQ_TEST_PROC_
+endif
+
 # secure path
 ifeq ($(strip $(MTK_SEC_VIDEO_PATH_SUPPORT)),yes)
 ifeq ($(strip $(TRUSTONIC_TEE_SUPPORT)),yes)

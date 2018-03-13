@@ -55,9 +55,6 @@ int Enable_FGADC_LOG = 1;
 /* ============================================================ // */
 BATTERY_METER_CONTROL battery_meter_ctrl = NULL;
 
-/* static struct proc_dir_entry *proc_entry_fgadc; */
-static char proc_fgadc_data[32];
-
 kal_bool gFG_Is_Charging = KAL_FALSE;
 kal_int32 g_auxadc_solution = 0;
 U32 g_spm_timer = 600;
@@ -1536,8 +1533,8 @@ void oam_init(void)
 	printk("zero----in function ====%s\n",__func__);
 	printk("zero---gFG_voltage=%d,g_booting_vbat = %d\n",gFG_voltage,g_booting_vbat);
 	
-	 if(bat_is_charger_exist() == KAL_TRUE)
-	 {
+	if(bat_is_charger_exist() == KAL_TRUE)
+	{
 		#ifdef CONFIG_USB_PLUS_DC
 	       printk("zero---BMT_status.charger_type = %d\n",dc_in_state());  
 	 	if (dc_in_state() == 0)
@@ -1565,20 +1562,17 @@ void oam_init(void)
 		 		gFG_voltage = gFG_voltage - 20;
 			else if(gFG_voltage >= 4100 && gFG_voltage < 4190)
 				gFG_voltage = gFG_voltage - 10;
-	      #endif
-	 }
-	 else
-	 {
-	 #if 0
- 		if(gFG_voltage > 3600 && gFG_voltage < 3700)
-			gFG_voltage = gFG_voltage - 5;
-	 	else if(gFG_voltage >= 3700 && gFG_voltage < 4000)
-	 		gFG_voltage = gFG_voltage - 10;
-		else if(gFG_voltage >= 4000 && gFG_voltage < 4150)
-			gFG_voltage = gFG_voltage - 5;
-	#endif
-	 }
-	 printk("zero---gFG_voltage=%d\n",gFG_voltage);
+	    #endif
+	}
+	else
+	{
+/* [BUGFIX]-Add-BEGIN by TCTSZ.leo.guo, 05/26/2015, Fixed voltage calculate to report soc.*/
+		printk("Fixed voltage calculate to report soc.");
+		if(gFG_voltage <= 3500)
+			gFG_voltage = gFG_voltage - 50;
+/* [BUGFIX]-Add-END by TCTSZ.leo.guo, 05/26/2015*/
+	}
+	printk("zero---gFG_voltage=%d\n",gFG_voltage);
 	 /************add by zero ************************/
 	gFG_capacity_by_v = fgauge_read_capacity_by_v(gFG_voltage);
 	vbat_capacity = fgauge_read_capacity_by_v(g_booting_vbat);
@@ -2096,6 +2090,13 @@ kal_int32 fgauge_read_capacity(kal_int32 type)
 	kal_int32 voltage;
 	kal_int32 temperature;
 	kal_int32 dvalue = 0;
+
+#ifndef CUST_DISABLE_CAPACITY_OCV2CV_TRANSFORM
+	kal_int32 C_0mA = 0;
+	kal_int32 C_400mA = 0;
+	kal_int32 dvalue_new = 0;
+#endif
+
 	kal_int32 temp_val = 0;
 
 	if (type == 0)		/* for initialization */
@@ -2110,6 +2111,20 @@ kal_int32 fgauge_read_capacity(kal_int32 type)
 	}
 
 	gFG_DOD1 = dvalue;
+
+#ifndef CUST_DISABLE_CAPACITY_OCV2CV_TRANSFORM
+	/* User View on HT~LT---------------------------------------------------------- */
+	gFG_temp = force_get_tbat(KAL_FALSE);
+	C_0mA = fgauge_get_Q_max(gFG_temp);
+	C_400mA = fgauge_get_Q_max_high_current(gFG_temp);
+	if (C_0mA > C_400mA) {
+		dvalue_new = (100 - dvalue) - (((C_0mA - C_400mA) * (dvalue)) / C_400mA);
+		dvalue = 100 - dvalue_new;
+	}
+	bm_print(BM_LOG_FULL, "[fgauge_read_capacity] %d,%d,%d,%d,%d,D1=%d,D0=%d\r\n",
+		 gFG_temp, C_0mA, C_400mA, dvalue, dvalue_new, gFG_DOD1, gFG_DOD0);
+	/* ---------------------------------------------------------------------------- */
+#endif				/* CUST_DISABLE_CAPACITY_OCV2CV_TRANSFORM */
 	temp_val = dvalue;
 	dvalue = 100 - temp_val;
 
@@ -2640,7 +2655,8 @@ kal_int32 battery_meter_get_charging_current(void)
 {
 #ifdef DISABLE_CHARGING_CURRENT_MEASURE
 	return 0;
-#elif !defined (EXTERNAL_SWCHR_SUPPORT)
+/* [PLATFORM]-Add-BEGIN by TCTSZ.leo.guo, 2015.06.10, Added measure current feature */
+#else
 	kal_int32 ADC_BAT_SENSE_tmp[10] =
 	    { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 	kal_int32 ADC_BAT_SENSE_sum = 0;
@@ -2726,9 +2742,8 @@ kal_int32 battery_meter_get_charging_current(void)
 	}
 
 	return ICharging;
-#else
-    return 0;
 #endif
+/* [PLATFORM]-Add-END by TCTSZ.leo.guo, 2015.06.10 */
 }
 
 kal_int32 battery_meter_get_battery_current(void)
@@ -2833,7 +2848,10 @@ kal_int32 battery_meter_trans_battery_percentage(kal_int32 d_val)
     d_val_temp = d_val;
     temp_val = battery_meter_get_battery_temperature();
     C_0mA = fgauge_get_Q_max(temp_val);
-
+/* [BUGFIX]-Add-BEGIN by TCTSZ.leo.guo, 06/25/2015, Fixed voltage calculate to report error soc. */
+	if(gFG_Is_Charging == KAL_TRUE)
+		return d_val;
+/* [BUGFIX]-Add-BEGIN by TCTSZ.leo.guo, 06/25/2015 */
     // discharging and current > 600ma
     i_avg_current = g_currentfactor * 6000/100;
     if(KAL_FALSE == gFG_Is_Charging && g_currentfactor > 100)
@@ -2843,8 +2861,10 @@ kal_int32 battery_meter_trans_battery_percentage(kal_int32 d_val)
 
     if(C_0mA > C_400mA)
     {
-        d_val_new = (100-d_val) - ( ( (C_0mA-C_400mA) * (d_val) ) / C_400mA );
-        d_val = 100 - d_val_new;
+        d_val_new = (100 - d_val) - (((C_0mA-C_400mA) * (d_val)) / C_400mA);
+/* [BUGFIX]-Add-BEGIN by TCTSZ.leo.guo, 06/25/2015, Fixed voltage calculate to report error soc. */
+	    if(d_val_new > 0) d_val = 100 - d_val_new;
+/* [BUGFIX]-Add-BEGIN by TCTSZ.leo.guo, 06/25/2015 */
     }
     bm_print(BM_LOG_FULL, "[battery_meter_trans_battery_percentage] %d,%d,%d,%d,%d,%d,%d\r\n", 
             temp_val, C_0mA, C_400mA, d_val_temp, d_val_new, d_val, g_currentfactor);
@@ -3122,15 +3142,18 @@ kal_int32 battery_meter_get_VSense(void)
 static ssize_t fgadc_log_write(struct file *filp, const char __user *buff,
 			       size_t len, loff_t *data)
 {
-	if (copy_from_user(&proc_fgadc_data, buff, len)) {
+
+	char proc_fgadc_data;
+
+	if ((len <= 0) || copy_from_user(&proc_fgadc_data, buff, 1)) {
 		bm_print(BM_LOG_CRTI, "fgadc_log_write error.\n");
 		return -EFAULT;
 	}
 
-	if (proc_fgadc_data[0] == '1') {
+	if (proc_fgadc_data == '1') {
 		bm_print(BM_LOG_CRTI, "enable FGADC driver log system\n");
 		Enable_FGADC_LOG = 1;
-	} else if (proc_fgadc_data[0] == '2') {
+	} else if (proc_fgadc_data == '2') {
 		bm_print(BM_LOG_CRTI, "enable FGADC driver log system:2\n");
 		Enable_FGADC_LOG = 2;
 	} else {

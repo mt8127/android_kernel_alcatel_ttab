@@ -2975,7 +2975,21 @@ qmHandleRxPackets(
             }
 
         }
-
+#if CFG_SUPPORT_WAPI
+		if (prCurrSwRfb->u2PacketLen > ETHER_HEADER_LEN) {
+			PUINT_8 pc = (PUINT_8) prCurrSwRfb->pvHeader;
+			UINT_16 u2Etype = 0;
+			u2Etype = (pc[ETH_TYPE_LEN_OFFSET] << 8) | (pc[ETH_TYPE_LEN_OFFSET + 1]);
+			/* for wapi integrity test. WPI_1x packet should be always in non-encrypted mode.
+				if we received any WPI(0x88b4) packet that is encrypted, drop here. */
+			if (u2Etype == ETH_WPI_1X && HIF_RX_HDR_GET_SEC_MODE(prHifRxHdr) != 0) {
+				DBGLOG(QM, INFO, ("drop wpi packet with sec mode\n"));
+				prCurrSwRfb->eDst = RX_PKT_DESTINATION_NULL;
+				QUEUE_INSERT_TAIL(&rReturnedQue, (P_QUE_ENTRY_T) prCurrSwRfb);
+				continue;
+			}
+		}
+#endif
         /* BAR frame */
         if(HIF_RX_HDR_GET_BAR_FLAG(prHifRxHdr)){
             prCurrSwRfb->eDst = RX_PKT_DESTINATION_NULL;

@@ -300,20 +300,15 @@ static void lcm_init(void)
     lcd_reset(0);
     lcd_power_en(0);
     lcd_power_en(1);
+    MDELAY(5);
+	mt_set_gpio_out(GPIO_LCM_PWR_EN, GPIO_OUT_ONE);//iml8881 bias
     MDELAY(50);
     lcd_reset(1);
-	MDELAY(20);
+	MDELAY(15);
 	lcd_reset(0);
-	MDELAY(20);
+	MDELAY(15);
 	lcd_reset(1);
-    MDELAY(20);
-	
-    mt_set_gpio_out(GPIO_LCM_PWR_EN, GPIO_OUT_ONE);//iml8881 bias
-    MDELAY(50);
-#ifdef BUILD_LK
-	//extern int tps65640_e2prom_data_check(void);
-	//tps65640_e2prom_data_check();	
-#endif
+    MDELAY(15);
 
 	push_table(lcm_initialization_setting, sizeof(lcm_initialization_setting) / sizeof(struct LCM_setting_table), 1);
 }
@@ -329,9 +324,9 @@ static void lcm_suspend(void)
     printk("%s, kernel", __func__);
 #endif
 	
+	lcd_reset(0);
+	MDELAY(5);
 	mt_set_gpio_out(GPIO_LCM_PWR_EN, GPIO_OUT_ZERO);//iml8881 bias
-	MDELAY(10);
-    lcd_reset(0);
     lcd_power_en(0);
     MDELAY(10);
 }

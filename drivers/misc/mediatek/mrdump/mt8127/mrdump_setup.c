@@ -33,7 +33,7 @@ void mrdump_reserve_memory(void)
 	/* We must reserved the lk block, can we pass it from lk? */    
 	memblock_reserve(LK_LOAD_ADDR, LK_LOAD_SIZE);
 
-	memblock_reserve(MRDUMP_CB_ADDR, MRDUMP_CB_SIZE);
+	memblock_reserve(MRDUMP_CB_ADDR, PAGE_ALIGN(sizeof(struct mrdump_control_block)));
 	cblock = (struct mrdump_control_block *)__va(MRDUMP_CB_ADDR);
 
 	mrdump_platform_init(cblock, &mrdump_mt6582_platform);

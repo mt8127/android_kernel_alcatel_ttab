@@ -29,7 +29,9 @@ static bool gCmdqTestSecure = false;
 
 extern unsigned long msleep_interruptible(unsigned int msecs);
 
+#ifdef _CMDQ_TEST_PROC_
 static struct proc_dir_entry *gCmdqTestProcEntry;
+#endif
 
 extern int32_t cmdq_core_suspend_HW_thread(int32_t thread);
 
@@ -2514,6 +2516,7 @@ static struct file_operations cmdq_fops = {
 
 static int __init cmdq_test_init(void)
 {
+#ifdef _CMDQ_TEST_PROC_
 	CMDQ_MSG("cmdq_test_init\n");
 
 	/* Mout proc entry for debug */
@@ -2523,17 +2526,19 @@ static int __init cmdq_test_init(void)
 			CMDQ_MSG("cmdq_test_init failed\n");
 		}
 	}
-
+#endif
 	return 0;
 }
 
 static void __exit cmdq_test_exit(void)
 {
+#ifdef _CMDQ_TEST_PROC_
 	CMDQ_MSG("cmdq_test_exit\n");
 	if (NULL != gCmdqTestProcEntry) {
 		proc_remove(gCmdqTestProcEntry);
 		gCmdqTestProcEntry = NULL;
 	}
+#endif
 }
 module_init(cmdq_test_init);
 module_exit(cmdq_test_exit);

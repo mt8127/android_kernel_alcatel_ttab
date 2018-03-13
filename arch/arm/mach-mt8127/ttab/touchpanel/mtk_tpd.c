@@ -38,11 +38,14 @@ char tpd_firmware_version_val[5];
 int tpd_config_version;
 int tpd_x_line;
 int tpd_y_line;
+u8 tpd_sensor_id;
 EXPORT_SYMBOL(gesture_value);
 EXPORT_SYMBOL(tpd_firmware_version_val);
 EXPORT_SYMBOL(tpd_config_version);
 EXPORT_SYMBOL(tpd_x_line);
 EXPORT_SYMBOL(tpd_y_line);
+EXPORT_SYMBOL(tpd_sensor_id);
+
 
 
 
@@ -291,7 +294,7 @@ static ssize_t firmware_version_val_show(struct device* dev, struct device_attri
 	return snprintf(buf, PAGE_SIZE, "%s\n", tpd_firmware_version_val);
 
 }
-static ssize_t firmware_version_val_store(struct device* dev, struct device_attribute* attr, char* buf, size_t count) {
+static ssize_t firmware_version_val_store(struct device* dev, struct device_attribute* attr, const char* buf, size_t count) {
 	 
 	return  count;
 
@@ -301,7 +304,7 @@ static ssize_t config_version_val_show(struct device* dev, struct device_attribu
 	return snprintf(buf, PAGE_SIZE, "%x\n", tpd_config_version);
 
 }
-static ssize_t config_version_val_store(struct device* dev, struct device_attribute* attr, char* buf,size_t count) {
+static ssize_t config_version_val_store(struct device* dev, struct device_attribute* attr, const char* buf,size_t count) {
 	 
 	return count;
 
@@ -311,7 +314,7 @@ static ssize_t tpd_x_line_val_show(struct device* dev, struct device_attribute* 
 	return snprintf(buf, PAGE_SIZE, "%d\n", tpd_x_line);
 
 }
-static ssize_t tpd_x_line_val_store(struct device* dev, struct device_attribute* attr, char* buf,size_t count) {
+static ssize_t tpd_x_line_val_store(struct device* dev, struct device_attribute* attr, const char* buf,size_t count) {
 	 
 	return count;
 
@@ -321,10 +324,18 @@ static ssize_t tpd_y_line_val_show(struct device* dev, struct device_attribute* 
 	return snprintf(buf, PAGE_SIZE, "%d\n", tpd_y_line);
 
 }
-static ssize_t tpd_y_line_val_store(struct device* dev, struct device_attribute* attr, char* buf,size_t count) {
+static ssize_t tpd_y_line_val_store(struct device* dev, struct device_attribute* attr, const char* buf,size_t count) {
 	 
 	return count;
 
+}
+
+static ssize_t sensor_id_val_show(struct device* dev, struct device_attribute* attr, char* buf) {
+	return snprintf(buf, PAGE_SIZE, "%x\n", tpd_sensor_id);
+
+}
+static ssize_t sensor_id_val_store(struct device* dev, struct device_attribute* attr, const char* buf,size_t count) {
+	return count;
 }
 
 
@@ -333,6 +344,7 @@ static DEVICE_ATTR(firmware_version, S_IRUGO | S_IWUSR, firmware_version_val_sho
 static DEVICE_ATTR(cfg_version, S_IRUGO | S_IWUSR, config_version_val_show, config_version_val_store);
 static DEVICE_ATTR(tpd_xline, S_IRUGO | S_IWUSR, tpd_x_line_val_show, tpd_x_line_val_store);
 static DEVICE_ATTR(tpd_yline, S_IRUGO | S_IWUSR, tpd_y_line_val_show, tpd_y_line_val_store);
+static DEVICE_ATTR(sensor_id, S_IRUGO | S_IWUSR, sensor_id_val_show, sensor_id_val_store);
 
 
 
@@ -490,7 +502,9 @@ static int tpd_probe(struct platform_device *pdev) {
      if(device_create_file(&pdev->dev, &dev_attr_tpd_yline) < 0) {
 	     printk(KERN_ALERT"caoyang creat attribute val.");				 
      }
-
+     if(device_create_file(&pdev->dev, &dev_attr_sensor_id) < 0) {
+         printk(KERN_ERR"create sensor_id sys file failed!\n");
+     }
 	
     /* init R-Touch */
     #if 0

@@ -1788,12 +1788,8 @@ wext_set_mlme (
 */
 /*----------------------------------------------------------------------------*/
 static int
-wext_set_scan (
-    IN struct net_device *prNetDev,
-    IN struct iw_request_info *prIwrInfo,
-    IN union iwreq_data *prData,
-    IN char *pcExtra
-    )
+wext_set_scan(IN struct net_device *prNetDev,
+	      IN struct iw_request_info *prIwrInfo, IN struct iw_scan_req *prIwScanReq, IN char *pcExtra)
 {
     P_GLUE_INFO_T prGlueInfo = NULL;
     WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
@@ -1808,9 +1804,8 @@ wext_set_scan (
 
 #if WIRELESS_EXT > 17
     /* retrieve SSID */
-    if(prData) {
-        essid_len = ((struct iw_scan_req *)(((struct iw_point*)prData)->pointer))->essid_len;
-    }
+	if (prIwScanReq)
+		essid_len = prIwScanReq->essid_len;
 #endif
 
     init_completion(&prGlueInfo->rScanComp);
@@ -3974,6 +3969,7 @@ wext_support_ioctl (
     int ret = 0;
     char *prExtraBuf = NULL;
     UINT_32 u4ExtraSize = 0;
+    struct iw_scan_req * prIwScanReq = NULL;
 
     /* prDev is verified in the caller function wlanDoIOCTL() */
 
@@ -4120,21 +4116,23 @@ wext_support_ioctl (
         }
 #if WIRELESS_EXT > 17
 		else if (iwr->u.data.length == sizeof(struct iw_scan_req)) {
-            prExtraBuf = kalMemAlloc(MAX_SSID_LEN, VIR_MEM_TYPE);
-            if (!prExtraBuf) {
-                ret = -ENOMEM;
-                break;
-            }
-            if (copy_from_user(prExtraBuf, ((struct iw_scan_req *) (iwr->u.data.pointer))->essid,
-                ((struct iw_scan_req *) (iwr->u.data.pointer))->essid_len)) {
-                ret = -EFAULT;
-            } else {
-                ret = wext_set_scan(prDev, NULL, (union iwreq_data *)  &(iwr->u.data), prExtraBuf);
-            }
+			prIwScanReq = kalMemAlloc(iwr->u.data.length, VIR_MEM_TYPE);
+			if (!prIwScanReq) {
+				ret = -ENOMEM;
+				break;
+			}
 
-            kalMemFree(prExtraBuf, VIR_MEM_TYPE, MAX_SSID_LEN);
-            prExtraBuf = NULL;
-        }
+			if (copy_from_user(prIwScanReq, iwr->u.data.pointer, iwr->u.data.length)) {
+				ret = -EFAULT;
+			} else {
+				if (prIwScanReq->essid_len > IW_ESSID_MAX_SIZE)
+					prIwScanReq->essid_len = IW_ESSID_MAX_SIZE;
+				ret = wext_set_scan(prDev, NULL, prIwScanReq, &(prIwScanReq->essid[0]));
+			}
+
+			kalMemFree(prIwScanReq, VIR_MEM_TYPE, iwr->u.data.length);
+			prIwScanReq = NULL;
+		}
 #endif
 		else {
             ret = -EINVAL;

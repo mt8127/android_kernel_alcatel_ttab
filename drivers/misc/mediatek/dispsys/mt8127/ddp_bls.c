@@ -97,7 +97,11 @@ DISPLAY_PWM_T * get_pwm_lut(void)
     return &g_pwm_lut;
 }
 
-static unsigned int brightness_mapping(unsigned int level);
+/* [FEATURE]-Mod-BEGIN by TCTSZ.yaohui.zeng, 2015/04/20,use customized brightness_mapping()*/
+//static unsigned int brightness_mapping(unsigned int level);
+extern unsigned int brightness_mapping(unsigned int level);
+/* [FEATURE]-Mod-END by TCTSZ.yaohui.zeng, 2015/04/20*/
+
 void disp_onConfig_bls(DISP_AAL_PARAM *param)
 {
     unsigned long prevSetting = DISP_REG_GET(DISP_REG_BLS_BLS_SETTING);
@@ -142,7 +146,8 @@ void disp_onConfig_bls(DISP_AAL_PARAM *param)
 
 }
 
-
+/* [FEATURE]-Mod-BEGIN by TCTSZ.yaohui.zeng, 2015/04/20,use customized brightness_mapping()*/
+/*
 static unsigned int brightness_mapping(unsigned int level)
 {
     unsigned int mapped_level;
@@ -154,6 +159,8 @@ static unsigned int brightness_mapping(unsigned int level)
 
 	return mapped_level;
 }
+*/
+/* [FEATURE]-Mod-END by TCTSZ.yaohui.zeng, 2015/04/20*/
 
 #if !defined(CONFIG_MTK_AAL_SUPPORT)
 #ifdef USE_DISP_BLS_MUTEX

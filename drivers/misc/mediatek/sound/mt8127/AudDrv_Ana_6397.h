@@ -69,7 +69,7 @@
 /*****************************************************************************
  *                  R E G I S T E R       D E F I N I T I O N
  *****************************************************************************/
-
+ 
 //---------------digital pmic register define start -------------------------------------------
 #define AFE_PMICDIG_AUDIO_BASE        (0x4000)
 #define AFE_UL_DL_CON0               (AFE_PMICDIG_AUDIO_BASE+0x0000)
@@ -107,6 +107,10 @@
 #define AFE_SGEN_CFG0               (AFE_PMICDIG_AUDIO_BASE + 0x0040)
 #define AFE_SGEN_CFG1               (AFE_PMICDIG_AUDIO_BASE + 0x0042)
 //---------------digital pmic  register define end ---------------------------------------
+
+/* The valid range of audio digital hardware in PMIC */
+#define AFE_ADDR_START	AFE_UL_DL_CON0
+#define AFE_ADDR_END		AFE_SGEN_CFG1
 
 //---------------analog pmic  register define start --------------------------------------
 #if 0
@@ -173,6 +177,8 @@
 #include <mach/upmu_hw.h>
 #endif
 
+/* The valid range of audio analog hardware in PMIC */
+#define AUDTOP_MAX_ADDR_OFFSET		(0x079A)
 //---------------analog pmic register define end ---------------------------------------
 
 typedef struct

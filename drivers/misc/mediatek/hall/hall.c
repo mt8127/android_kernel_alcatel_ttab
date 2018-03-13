@@ -31,7 +31,7 @@ static struct hall_data *hall = NULL;
 static struct class *hall_class = NULL;
 static struct device *hall_dev = NULL;
 static struct platform_device *hall_pdev = NULL;
-extern unsigned int bl_brightness;
+extern unsigned int bl_brightness_hal;
 
 
 static void do_hall_work(struct work_struct *work)
@@ -46,14 +46,14 @@ static void do_hall_work(struct work_struct *work)
 	hall_state = !hall_state;
 	pressed = (hall_state == !!CUST_EINT_POLARITY_LOW);
 
-	if((pressed == 1) && (bl_brightness != 0)) {
+	if((pressed == 1) && (bl_brightness_hal != 0)) {
 		input_report_key(hall_input, KEY_POWER, pressed);
 		input_sync(hall_input);
 		input_report_key(hall_input, KEY_POWER, !pressed);
 		input_sync(hall_input);
 	}
 
-	if((pressed == 0) && (bl_brightness == 0)) {
+	if((pressed == 0) && (bl_brightness_hal == 0)) {
 		input_report_key(hall_input, KEY_POWER, !pressed);
 		input_sync(hall_input);
 		input_report_key(hall_input, KEY_POWER, pressed);

@@ -1003,7 +1003,10 @@ static int _DISP_ESD_Check(int* dirty)
 			{
 			    break;
 			}
-			esd_check_count++;
+/* [PLATFORM]-Mod-BEGIN by TCTSZ.yaohui.zeng, 2015/05/04, modify for ESD fast shoot*/
+			//esd_check_count++;
+			esd_check_count=1;
+/* [PLATFORM]-Mod-END by TCTSZ.yaohui.zeng, 2015/05/04*/
         }
         if (esd_check_count >= LCM_ESD_CHECK_MAX_COUNT)
         {

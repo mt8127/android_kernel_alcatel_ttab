@@ -28,9 +28,12 @@ unsigned int Cust_GetBacklightLevelSupport_byPWM(void)
 unsigned int brightness_mapping(unsigned int level)
 {
     unsigned int mapped_level;
-    
-    mapped_level = level;
-       
+/* [FEATURE]-Mod-BEGIN by TCTSZ.yaohui.zeng, 2015/04/20,set BL min level to 8(PWM 3.14%)*/
+	if((level <= 32)&&(level > 0))
+		mapped_level = 32;
+	else
+		mapped_level = level;
+/* [FEATURE]-Mod-END by TCTSZ.yaohui.zeng, 2015/04/20*/
 	return mapped_level;
 }
 /*

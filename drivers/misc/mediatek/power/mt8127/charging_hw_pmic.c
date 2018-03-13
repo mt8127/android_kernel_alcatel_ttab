@@ -568,6 +568,7 @@ static void hw_bc11_dump_register(void)
 
 	upmu_set_rg_vcdt_mode(0);       //VCDT_MODE
 	upmu_set_rg_vcdt_hv_en(1);      //VCDT_HV_EN    
+
 	upmu_set_rg_usbdl_set(0);       //force leave USBDL mode
 	upmu_set_rg_usbdl_rst(1);		//force leave USBDL mode
 

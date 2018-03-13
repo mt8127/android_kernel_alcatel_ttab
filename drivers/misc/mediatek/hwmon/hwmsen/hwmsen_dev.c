@@ -265,7 +265,7 @@ static void hwmsen_work_func(struct work_struct *work)
 	
 	memset(&sensor_data, 0, sizeof(sensor_data));	
 	time.tv_sec = time.tv_nsec = 0;    
-	time = get_monotonic_coarse(); 
+	get_monotonic_boottime(&time);
 	nt = time.tv_sec*1000000000LL+time.tv_nsec;
 	//mutex_lock(&obj_data.lock);
 	for(idx = 0; idx < MAX_ANDROID_SENSOR_NUM; idx++)
@@ -340,7 +340,7 @@ static void hwmsen_work_func(struct work_struct *work)
 				if((sensor_data.values[0] != obj_data.sensors_data[idx].values[0]) 
 					|| (sensor_data.values[1] != obj_data.sensors_data[idx].values[1])
 					|| (sensor_data.values[2] != obj_data.sensors_data[idx].values[2])
-					|| (idx == ID_MAGNETIC))
+					|| (idx == ID_MAGNETIC) || (idx == ID_ACCELEROMETER))
 				{	
 				    if( 0 == sensor_data.values[0] && 0==sensor_data.values[1] 
 						&& 0 == sensor_data.values[2])
@@ -443,7 +443,7 @@ int hwmsen_get_interrupt_data(int sensor, hwm_sensor_data *data)
 	else
 	{		
 		time.tv_sec = time.tv_nsec = 0;    
-		time = get_monotonic_coarse(); 
+		get_monotonic_boottime(&time);
 		nt = time.tv_sec*1000000000LL+time.tv_nsec;  
 		if((sensor == ID_LIGHT) ||(sensor == ID_PRESSURE) 
 			||(sensor == ID_PROXIMITY) || (sensor == ID_TEMPRERATURE))
@@ -603,6 +603,11 @@ static int hwmsen_enable(struct hwmdev_object *obj, int sensor, int enable)
 
 	sensor_type = 1 << sensor;
 	
+	if (sensor > MAX_ANDROID_SENSOR_NUM || sensor < 0) {
+		HWM_ERR("handle %d!\n", sensor);
+		return -EINVAL;
+	}
+
 	if(!obj)
 	{
 		HWM_ERR("hwmdev obj pointer is NULL!\n");
@@ -613,7 +618,6 @@ static int hwmsen_enable(struct hwmdev_object *obj, int sensor, int enable)
 		HWM_ERR("the sensor (%d) is not attached!!\n", sensor);
 		return -ENODEV;
 	}
-	
 
 	mutex_lock(&obj->dc->lock);
 	cxt = obj->dc->cxt[sensor];    
@@ -724,6 +728,11 @@ static int hwmsen_enable_nodata(struct hwmdev_object *obj, int sensor, int enabl
 	HWM_FUN(f);
 	sensor_type = 1 << sensor;
 
+	if (sensor > MAX_ANDROID_SENSOR_NUM || sensor < 0) {
+		HWM_ERR("handle %d!\n", sensor);
+		return -EINVAL;
+	}
+
 	if(NULL == obj)
 	{
 		HWM_ERR("hwmdev obj pointer is NULL!\n");
@@ -734,7 +743,6 @@ static int hwmsen_enable_nodata(struct hwmdev_object *obj, int sensor, int enabl
 		HWM_ERR("the sensor (%d) is not attached!!\n", sensor);
 		return -ENODEV;
 	}
-	
 
 	mutex_lock(&obj->dc->lock);
 	cxt = obj->dc->cxt[sensor];
@@ -784,6 +792,10 @@ static int hwmsen_set_delay(int delay, int handle )
 	int err = 0;
 	struct hwmsen_context *cxt = NULL;
 
+	if (handle > MAX_ANDROID_SENSOR_NUM || handle < 0) {
+		HWM_ERR("handle %d!\n", handle);
+		return -EINVAL;
+	}
 	cxt = hwm_obj->dc->cxt[handle];
 	if(NULL == cxt ||(cxt->obj.sensor_operate == NULL))
 	{

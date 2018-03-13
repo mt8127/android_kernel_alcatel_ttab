@@ -26,8 +26,8 @@
 #include <linux/uaccess.h>
 #include <linux/fs.h>
 #include <asm/atomic.h>
-#include <asm/system.h>
 #include <linux/xlog.h>
+#include <asm/system.h>
 
 #include "kd_camera_hw.h"
 #include "kd_imgsensor.h"
@@ -36,1315 +36,1852 @@
 
 #include "ov5670mipi_Sensor.h"
 
-#define PFX "ov5670_camera_sensor"
-//#define LOG_WRN(format, args...) xlog_printk(ANDROID_LOG_WARN ,PFX, "[%S] " format, __FUNCTION__, ##args)
-//#defineLOG_INF(format, args...) xlog_printk(ANDROID_LOG_INFO ,PFX, "[%s] " format, __FUNCTION__, ##args)
-//#define LOG_DBG(format, args...) xlog_printk(ANDROID_LOG_DEBUG ,PFX, "[%S] " format, __FUNCTION__, ##args)
-#define LOG_INF(format, args...)	xlog_printk(ANDROID_LOG_INFO   , PFX, "[%s] " format, __FUNCTION__, ##args)
+#include "ov5670mipiraw_Camera_Sensor_para.h"
+#include "ov5670mipiraw_CameraCustomized.h"
+static DEFINE_SPINLOCK(ov5670mipiraw_drv_lock);
+static int module_id = 0;
 
-static DEFINE_SPINLOCK(imgsensor_drv_lock);
+#define OV5670_DEBUG
+#ifdef OV5670_DEBUG
+	#define OV5670DB(fmt, arg...) xlog_printk(ANDROID_LOG_DEBUG, "[OV5670Raw] ",  fmt, ##arg)
+#else
+	#define OV5670DB(fmt, arg...)
+#endif
 
-   
-static imgsensor_info_struct imgsensor_info = { 
-	.sensor_id = OV5670_SENSOR_ID,		//record sensor id defined in Kd_imgsensor.h
-	
-	.checksum_value = 0x523c51f6,		//checksum value for Camera Auto Test
-	
-	.pre = {
-		.pclk = 102850000,				//record different mode's pclk
-		.linelength = 1676,				//record different mode's linelength
-		.framelength = 2045,			//record different mode's framelength
-		.startx = 1,					//record different mode's startx of grabwindow
-		.starty = 0,					//record different mode's starty of grabwindow
-		.grabwindow_width = 1280,		//record different mode's width of grabwindow
-		.grabwindow_height = 960,		//record different mode's height of grabwindow
-		/*	 following for MIPIDataLowPwr2HighSpeedSettleDelayCount by different scenario	*/
-		.mipi_data_lp2hs_settle_dc = 14,//unit , ns
-		/*	 following for GetDefaultFramerateByScenario()	*/
-		.max_framerate = 300,	
-	},
-	.cap = {
-		.pclk = 102850000,
-		.linelength = 1676,
-		.framelength = 2045,
-		.startx = 1,
-		.starty = 0,
-		.grabwindow_width = 2560,
-		.grabwindow_height = 1920,
-		.mipi_data_lp2hs_settle_dc = 14,//unit , ns
-		.max_framerate = 300,
-	},
-	.normal_video = {
-		.pclk = 102850000,
-		.linelength = 1676,
-		.framelength = 2045,
-		.startx = 1,
-		.starty = 0,
-		.grabwindow_width = 1280,
-		.grabwindow_height = 960,
-		.mipi_data_lp2hs_settle_dc = 14,//unit , ns
-		.max_framerate = 300,
-	},
-	.margin = 4,			//sensor framelength & shutter margin
-	.min_shutter = 4,		//min shutter
-	.max_frame_length = 0x7fff,//max framelength by sensor register's limitation
-	.ae_shut_delay_frame = 0,	//shutter delay frame for AE cycle, 2 frame with ispGain_delay-shut_delay=2-0=2
-	.ae_sensor_gain_delay_frame = 0,//sensor gain delay frame for AE cycle,2 frame with ispGain_delay-sensor_gain_delay=2-0=2
-	.ae_ispGain_delay_frame = 2,//isp gain delay frame for AE cycle
-	.sensor_mode_num = 5,	  //support sensor mode num
-	
-	.cap_delay_frame = 3,		//enter capture delay frame num
-	.pre_delay_frame = 3, 		//enter preview delay frame num
-	.video_delay_frame = 3,		//enter video delay frame num
-	.isp_driving_current = ISP_DRIVING_8MA, //mclk driving current
-    .sensor_interface_type = SENSOR_INTERFACE_TYPE_MIPI,//sensor_interface_type
-	//.mipi_sensor_type = MIPI_OPHY_NCSI2; //0,MIPI_OPHY_NCSI2;  1,MIPI_OPHY_CSI2
-	//.mipi_settle_delay_mode = MIPI_SETTLEDELAY_AUTO; //0,MIPI_SETTLEDELAY_AUTO; 1,MIPI_SETTLEDELAY_MANNUAL
-	.sensor_output_dataformat = SENSOR_OUTPUT_FORMAT_RAW_Gb,//sensor output first pixel color
-	.mclk = 24,//mclk value, suggest 24 or 26 for 24Mhz or 26Mhz
-	.mipi_lane_num = SENSOR_MIPI_2_LANE,//mipi lane num
-	.i2c_addr_table = {0x6c, 0x20, 0xff},//record sensor support all write id addr, only supprt 4must end with 0xff
+
+kal_uint32 OV5670_FeatureControl_PERIOD_PixelNum=OV5670_PV_PERIOD_PIXEL_NUMS;
+kal_uint32 OV5670_FeatureControl_PERIOD_LineNum=OV5670_PV_PERIOD_LINE_NUMS;
+
+UINT16 OV5670_VIDEO_MODE_TARGET_FPS = 30;
+
+MSDK_SCENARIO_ID_ENUM OV5670CurrentScenarioId = MSDK_SCENARIO_ID_CAMERA_PREVIEW;
+MSDK_SENSOR_CONFIG_STRUCT OV5670SensorConfigData;
+static OV5670_PARA_STRUCT OV5670;
+kal_uint32 OV5670_FAC_SENSOR_REG;
+
+
+SENSOR_REG_STRUCT OV5670SensorCCT[]=CAMERA_SENSOR_CCT_DEFAULT_VALUE;
+SENSOR_REG_STRUCT OV5670SensorReg[ENGINEER_END]=CAMERA_SENSOR_REG_DEFAULT_VALUE;
+
+
+#define OV5670_TEST_PATTERN_CHECKSUM 0xca3667da //0x5d8082f0 //0x75bef806 //0xa2230d9f    //0xf5e2f1ce
+kal_bool OV5670_During_testpattern = KAL_FALSE;
+
+extern int iReadReg(u16 a_u2Addr , u8 * a_puBuff , u16 i2cId);
+extern int iWriteReg(u16 a_u2Addr , u32 a_u4Data , u32 a_u4Bytes , u16 i2cId);
+
+#define OV5670_write_cmos_sensor(addr, para) iWriteReg((u16) addr , (u32) para , 1, OV5670MIPI_WRITE_ID)
+
+kal_uint16 OV5670_read_cmos_sensor(kal_uint32 addr)
+{
+kal_uint16 get_byte=0;
+    iReadReg((u16) addr ,(u8*)&get_byte,OV5670MIPI_WRITE_ID);
+    return get_byte;
+}
+
+
+void OV5670_Init_Para(void)
+{
+
+	spin_lock(&ov5670mipiraw_drv_lock);
+	OV5670.sensorMode = SENSOR_MODE_INIT;
+	OV5670.OV5670AutoFlickerMode = KAL_FALSE;
+	OV5670.OV5670VideoMode = KAL_FALSE;
+	OV5670.DummyLines= 0;
+	OV5670.DummyPixels= 0;
+	OV5670.pvPclk =  (10285); 
+	OV5670.videoPclk = (10285);
+	OV5670.capPclk = (10285);
+
+	OV5670.shutter = 0x4C00;
+	OV5670.ispBaseGain = BASEGAIN;
+	OV5670.sensorGlobalGain = 0x0200;
+	spin_unlock(&ov5670mipiraw_drv_lock);
+}
+
+#define RG_Ratio_Typical 0x264
+#define BG_Ratio_Typical 0x236
+
+struct otp_struct {
+   int flag; // bit[7]: info, bit[6]:wb
+   int module_integrator_id;
+   int lens_id;
+   int production_year;
+   int production_month;
+   int production_day;
+   int rg_ratio;
+   int bg_ratio;
+   int g_gain;
+   int ob_data;
+   int golden_RG;
+   int golden_BG;
+   int golden_G;
 };
 
 
-static imgsensor_struct imgsensor = {
-	.mirror = IMAGE_NORMAL,				//mirrorflip information
-	.sensor_mode = IMGSENSOR_MODE_INIT, //IMGSENSOR_MODE enum value,record current sensor mode,such as: INIT, Preview, Capture, Video,High Speed Video, Slim Video
-	.shutter = 0x4C00,					//current shutter
-	.gain = 0x0200,						//current gain
-	.dummy_pixel = 0,					//current dummypixel
-	.dummy_line = 0,					//current dummyline
-	.current_fps = 0,  //full size current fps : 24fps for PIP, 30fps for Normal or ZSD
-	.autoflicker_en = KAL_FALSE,  //auto flicker enable: KAL_FALSE for disable auto flicker, KAL_TRUE for enable auto flicker
-	.test_pattern = KAL_FALSE,		//test pattern mode or not. KAL_FALSE for in test pattern mode, KAL_TRUE for normal output
-	.current_scenario_id = MSDK_SCENARIO_ID_CAMERA_PREVIEW,//current scenario id
-	.i2c_write_id = 0x6c,//record current sensor's i2c write id
-};
-
-
-/* Sensor output window information */
-
-static kal_uint16 read_cmos_sensor(kal_uint32 addr)
+static void otp_i2c_write( uint32_t addr, kal_uint16 data)
 {
-	kal_uint16 get_byte=0;
-
-	char pu_send_cmd[2] = {(char)(addr >> 8), (char)(addr & 0xFF) };
-	iReadRegI2C(pu_send_cmd, 2, (u8*)&get_byte, 1, imgsensor.i2c_write_id);
-
-	return get_byte;
+  OV5670_write_cmos_sensor(addr, data);
 }
 
-static void write_cmos_sensor(kal_uint32 addr, kal_uint32 para)
+static kal_uint16 otp_i2c_read(uint32_t addr)
+
 {
-	char pu_send_cmd[3] = {(char)(addr >> 8), (char)(addr & 0xFF), (char)(para & 0xFF)};
-	iWriteRegI2C(pu_send_cmd, 3, imgsensor.i2c_write_id);
+	return OV5670_read_cmos_sensor(addr);
 }
 
-static void set_dummy()
+
+// return value:
+// bit[7]: 0 no otp info, 1 valid otp info
+// bit[6]: 0 no otp wb, 1 valib otp wb
+static int read_otp(struct otp_struct *otp_ptr)
 {
-	LOG_INF("dummyline = %d, dummypixels = %d \n", imgsensor.dummy_line, imgsensor.dummy_pixel);
-	/* you can set dummy by imgsensor.dummy_line and imgsensor.dummy_pixel, or you can set dummy by imgsensor.frame_length and imgsensor.line_length */
-	write_cmos_sensor(0x380e, (imgsensor.frame_length >> 8) & 0xFF);
-	write_cmos_sensor(0x380f, imgsensor.frame_length & 0xFF);	  
-	write_cmos_sensor(0x380c, (imgsensor.line_length >> 8) & 0xFF);
-	write_cmos_sensor(0x380d, imgsensor.line_length & 0xFF);
-  
-}	/*	set_dummy  */
-
-
-static void set_max_framerate(UINT16 framerate,kal_bool min_framelength_en)
-{
-	kal_int16 dummy_line;
-	kal_uint32 frame_length = imgsensor.frame_length;
-	//unsigned long flags;
-
-	LOG_INF("framerate = %d, min framelength should enable? \n", framerate,min_framelength_en);
+   int otp_flag, addr, temp, i;
+   //set 0x5002[3] to “0”
+   int temp1;
    
-	frame_length = imgsensor.pclk / framerate * 10 / imgsensor.line_length;
-	spin_lock(&imgsensor_drv_lock);
-	imgsensor.frame_length = (frame_length > imgsensor.min_frame_length) ? frame_length : imgsensor.min_frame_length; 
-	imgsensor.dummy_line = imgsensor.frame_length - imgsensor.min_frame_length;
-	//dummy_line = frame_length - imgsensor.min_frame_length;
-	//if (dummy_line < 0)
-		//imgsensor.dummy_line = 0;
-	//else
-		//imgsensor.dummy_line = dummy_line;
-	//imgsensor.frame_length = frame_length + imgsensor.dummy_line;
-	if (imgsensor.frame_length > imgsensor_info.max_frame_length)
-	{
-		imgsensor.frame_length = imgsensor_info.max_frame_length;
-		imgsensor.dummy_line = imgsensor.frame_length - imgsensor.min_frame_length;
-	}
-	if (min_framelength_en)
-		imgsensor.min_frame_length = imgsensor.frame_length;
-	spin_unlock(&imgsensor_drv_lock);
-	set_dummy();
-}	/*	set_max_framerate  */
+   temp1 = otp_i2c_read(0x5002);
+   otp_i2c_write(0x5002, (0x00 & 0x08) | (temp1 & (~0x08)));
+   
+   // read OTP into buffer
+   otp_i2c_write(0x3d84, 0xC0);
+   otp_i2c_write(0x3d88, 0x70); // OTP start address
+   otp_i2c_write(0x3d89, 0x10);
+   otp_i2c_write(0x3d8A, 0x70); // OTP end address
+   otp_i2c_write(0x3d8B, 0x29);
+   otp_i2c_write(0x3d81, 0x01); // load otp into buffer
+   mdelay(5);
+   
+   // OTP into
+   otp_flag = otp_i2c_read(0x7010);
+   addr = 0;
+   
+   if((otp_flag & 0xc0) == 0x40) {
+      addr = 0x7011; // base address of info group 1
+   } else if((otp_flag & 0x30) == 0x10) {
+      addr = 0x7018; // base address of info group 2
+   }else if((otp_flag & 0x0c) == 0x04) {
+      addr = 0x701f; // base address of info group 3
+   }
+   
+   if(addr != 0) {
+        (*otp_ptr).flag = 0x80; // valid base info in OTP
+        (*otp_ptr).module_integrator_id = otp_i2c_read( addr );
+        (*otp_ptr).lens_id = otp_i2c_read( addr + 1);
+        (*otp_ptr).production_year = otp_i2c_read( addr + 4);
+        (*otp_ptr).production_month = otp_i2c_read( addr + 5);
+        (*otp_ptr).production_day = otp_i2c_read( addr + 6);
+   } else {
+        (*otp_ptr).flag = 0x00; // not info in OTP
+        (*otp_ptr).module_integrator_id = 0;
+        (*otp_ptr).lens_id = 0;
+        (*otp_ptr).production_year = 0;
+        (*otp_ptr).production_month = 0;
+        (*otp_ptr).production_day = 0;
+   }
 
+   module_id = (*otp_ptr).module_integrator_id;
+   // OTP WB Calibration
+   otp_flag = otp_i2c_read(0x7026);
+   addr = 0;
+   
+   if((otp_flag & 0xc0) == 0x40) {
+     addr = 0x7028; // base address of WB Calibration group 1
+   }else if((otp_flag & 0x30) == 0x10) {
+     addr = 0x7031; // base address of WB Calibration group 2
+   }else if((otp_flag & 0x0c) == 0x04) {
+     addr = 0x703a; // base address of WB Calibration group 3
+   }
+   
+   if(addr != 0) {
+     (*otp_ptr).flag |= 0x40;
+     (*otp_ptr).ob_data = otp_i2c_read(addr-1);
 
-static void write_shutter(kal_uint16 shutter)
+     temp = otp_i2c_read( addr + 3);
+     (*otp_ptr).rg_ratio = (otp_i2c_read(addr)<<2) + ((temp>>6) & 0x03);
+     (*otp_ptr).bg_ratio = (otp_i2c_read( addr + 1)<<2) + ((temp>>4) & 0x03);
+
+     temp = otp_i2c_read(addr + 7);
+     (*otp_ptr).golden_RG = (otp_i2c_read(addr + 4) << 2) + ((temp >> 6) & 0x03);
+     (*otp_ptr).golden_BG = (otp_i2c_read(addr + 5) << 2) + ((temp >> 4) & 0x03);
+     (*otp_ptr).golden_G = otp_i2c_read(addr + 6);
+
+     OV5670DB("ob_data=%d rg_ratio=%d bg_ratio=%d golden_RG=%d golden_BG=%d golden_G=%d\n",
+		(*otp_ptr).ob_data, (*otp_ptr).rg_ratio, (*otp_ptr).bg_ratio, (*otp_ptr).golden_RG, (*otp_ptr).golden_BG, (*otp_ptr).golden_G);
+
+   }else {
+     (*otp_ptr).rg_ratio = 0;
+     (*otp_ptr).bg_ratio = 0;
+   }
+   
+   for(i=0x7010;i<=0x7041;i++) {
+     otp_i2c_write(i,0); // clear OTP buffer, recommended use continuous write to accelarate
+   }
+   
+   //set 0x5002[3] to “1”
+   temp1 = otp_i2c_read(0x5002);
+   otp_i2c_write(0x5002, (0x02 & 0x08) | (temp1 & (~0x08)));
+   return (*otp_ptr).flag ;
+}
+
+static int apply_otp(struct otp_struct *otp_ptr)
 {
-    unsigned long flags;
-	kal_uint16 realtime_fps = 0;
-	kal_uint32 frame_length = 0;
-    spin_lock_irqsave(&imgsensor_drv_lock, flags);
-    imgsensor.shutter = shutter;
-    spin_unlock_irqrestore(&imgsensor_drv_lock, flags);
+	 int rg, bg, R_gain, G_gain, B_gain, Base_gain;
 
-	/* 0x3500, 0x3501, 0x3502 will increase VBLANK to get exposure larger than frame exposure */
-	/* AE doesn't update sensor gain at capture mode, thus extra exposure lines must be updated here. */
-	
-	// OV Recommend Solution
-	// if shutter bigger than frame_length, should extend frame length first
-	spin_lock(&imgsensor_drv_lock);
-	if (shutter > imgsensor.min_frame_length - imgsensor_info.margin)		
-		imgsensor.frame_length = shutter + imgsensor_info.margin;
-	else
-		imgsensor.frame_length = imgsensor.min_frame_length;
-	if (imgsensor.frame_length > imgsensor_info.max_frame_length)
-		imgsensor.frame_length = imgsensor_info.max_frame_length;
-	imgsensor.frame_length = (imgsensor.frame_length>>1)<<1;
-	spin_unlock(&imgsensor_drv_lock);
-	shutter = (shutter < imgsensor_info.min_shutter) ? imgsensor_info.min_shutter : shutter;
-	shutter = (shutter > (imgsensor_info.max_frame_length - imgsensor_info.margin)) ? (imgsensor_info.max_frame_length - imgsensor_info.margin) : shutter;
-	shutter = (shutter >> 1) << 1;
-	
-	if (imgsensor.autoflicker_en) { 
-		realtime_fps = imgsensor.pclk / imgsensor.line_length * 10 / imgsensor.frame_length;
-		if(realtime_fps >= 297 && realtime_fps <= 305)
-			set_max_framerate(296,0);
-		else if(realtime_fps >= 147 && realtime_fps <= 150)
-			set_max_framerate(146,0);	
-        else {
-        // Extend frame length
-        write_cmos_sensor(0x380e, imgsensor.frame_length >> 8);
-        write_cmos_sensor(0x380f, imgsensor.frame_length & 0xFF);
+   // apply OTP WB Calibration
+   if ((*otp_ptr).flag & 0x40) {
+        rg = (*otp_ptr). rg_ratio;
+        bg = (*otp_ptr).bg_ratio;
+        //calculate G gain
+        R_gain = (RG_Ratio_Typical*1000) / rg;
+        B_gain = (BG_Ratio_Typical*1000) / bg;
+        G_gain = 1000;    
+         OV5670DB("before calibration R_gain=%d B_gain=%d G_gain=%d rg=%d bg=%d\n", R_gain, B_gain, G_gain, rg, bg);
+        if (R_gain < 1000 || B_gain < 1000)
+        {
+             if (R_gain < B_gain)
+               Base_gain = R_gain;
+             else
+               Base_gain = B_gain;
         }
-	} else {
-		// Extend frame length
-		write_cmos_sensor(0x380e, (imgsensor.frame_length >> 8)& 0xFF);
-		write_cmos_sensor(0x380f, imgsensor.frame_length & 0xFF);
-	}
+        else
+        {
+             Base_gain = G_gain;
+        }
+        
+        R_gain = 0x400 * R_gain / (Base_gain);
+        B_gain = 0x400 * B_gain / (Base_gain);
+        G_gain = 0x400 * G_gain / (Base_gain);
+        OV5670DB("after calibration R_gain=%d B_gain=%d G_gain=%d \n", R_gain, B_gain, G_gain);
 
-	// Update Shutter
-	write_cmos_sensor(0x3502, (shutter << 4) & 0xF0);
-	write_cmos_sensor(0x3501, (shutter >> 4) & 0xFF);	  
-	write_cmos_sensor(0x3500, (shutter >> 12) & 0x0F);	
-	LOG_INF("Exit! shutter =%d, framelength =%d\n", shutter,imgsensor.frame_length);
-
-	//LOG_INF("frame_length = %d ", frame_length);
-	
-}	/*	write_shutter  */
-
-
-
-/*************************************************************************
-* FUNCTION
-*	set_shutter
-*
-* DESCRIPTION
-*	This function set e-shutter of sensor to change exposure time.
-*
-* PARAMETERS
-*	iShutter : exposured lines
-*
-* RETURNS
-*	None
-*
-* GLOBALS AFFECTED
-*
-*************************************************************************/
-static void set_shutter(kal_uint16 shutter)
-{
-	unsigned long flags;
-	spin_lock_irqsave(&imgsensor_drv_lock, flags);
-	imgsensor.shutter = shutter;
-	spin_unlock_irqrestore(&imgsensor_drv_lock, flags);
-	
-	write_shutter(shutter);
-}	/*	set_shutter */
-
-
-
-static kal_uint16 gain2reg(const kal_uint16 gain)
-{
-	kal_uint16 reg_gain = 0x0000;
-	
-	reg_gain = ((gain * 128)/BASEGAIN);
-	//reg_gain = ((gain /BASEGAIN)<<7)+((gain % BASEGAIN)<<7/BASEGAIN);
-	reg_gain = reg_gain & 0xFFFF;
-	return (kal_uint16)reg_gain;
+        // update sensor WB gain
+        if (R_gain>0x400) {
+        otp_i2c_write(0x5032, R_gain>>8);
+        otp_i2c_write(0x5033, R_gain & 0x00ff);
+        }
+        if (G_gain>0x400) {
+        otp_i2c_write(0x5034, G_gain>>8);
+        otp_i2c_write(0x5035, G_gain & 0x00ff);
+        }
+        if (B_gain>0x400) {
+        otp_i2c_write(0x5036, B_gain>>8);
+        otp_i2c_write(0x5037, B_gain & 0x00ff);
+        }
+   }
+   return (*otp_ptr).flag ;	
 }
 
-/*************************************************************************
-* FUNCTION
-*	set_gain
-*
-* DESCRIPTION
-*	This function is to set global gain to sensor.
-*
-* PARAMETERS
-*	iGain : sensor global gain(base: 0x40)
-*
-* RETURNS
-*	the actually gain set to sensor.
-*
-* GLOBALS AFFECTED
-*
-*************************************************************************/
-static kal_uint16 set_gain(kal_uint16 gain)
+void ov5670_otp_config()
+{   
+	struct otp_struct otp_info ;  
+	
+	read_otp(&otp_info);   
+	apply_otp(&otp_info) ;
+}
+kal_uint32 GetOV5670LineLength(void)
 {
-	kal_uint16 reg_gain;
-	kal_uint16 iGain =1;
-	kal_uint8 ChangeFlag=0x07;
+	kal_uint32 OV5670_line_length = 0;
+	if ( SENSOR_MODE_PREVIEW == OV5670.sensorMode )  
+	{
+		OV5670_line_length = OV5670_PV_PERIOD_PIXEL_NUMS + OV5670.DummyPixels;
+	}
+	else if( SENSOR_MODE_VIDEO == OV5670.sensorMode ) 
+	{
+		OV5670_line_length = OV5670_VIDEO_PERIOD_PIXEL_NUMS + OV5670.DummyPixels;
+	}
+	else
+	{
+		OV5670_line_length = OV5670_FULL_PERIOD_PIXEL_NUMS + OV5670.DummyPixels;
+	}
+
+    return OV5670_line_length;
+
+}
+
+
+kal_uint32 GetOV5670FrameLength(void)
+{
+	kal_uint32 OV5670_frame_length = 0;
+
+	if ( SENSOR_MODE_PREVIEW == OV5670.sensorMode )  
+	{
+		OV5670_frame_length = OV5670_PV_PERIOD_LINE_NUMS + OV5670.DummyLines ;
+	}
+	else if( SENSOR_MODE_VIDEO == OV5670.sensorMode ) 
+	{
+		OV5670_frame_length = OV5670_VIDEO_PERIOD_LINE_NUMS + OV5670.DummyLines ;
+	}
+	else
+	{
+		OV5670_frame_length = OV5670_FULL_PERIOD_LINE_NUMS + OV5670.DummyLines ;
+	}
+
+	return OV5670_frame_length;
+}
+
+
+kal_uint32 OV5670_CalcExtra_For_ShutterMargin(kal_uint32 shutter_value,kal_uint32 shutterLimitation)
+{
+    kal_uint32 extra_lines = 0;
+
+	
+	if (shutter_value <4 ){
+		shutter_value = 4;
+	}
+
+	
+	if (shutter_value > shutterLimitation)
+	{
+		extra_lines = shutter_value - shutterLimitation;
+    }
+	else
+		extra_lines = 0;
+
+    return extra_lines;
+
+}
+
+
+kal_uint32 OV5670_CalcFrameLength_For_AutoFlicker(void)
+{
+
+    kal_uint32 AutoFlicker_min_framelength = 0;
+
+	switch(OV5670CurrentScenarioId)
+	{
+		case MSDK_SCENARIO_ID_CAMERA_ZSD:
+		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
+			AutoFlicker_min_framelength = (OV5670.capPclk*10000) /(OV5670_FULL_PERIOD_PIXEL_NUMS + OV5670.DummyPixels)/OV5670_AUTOFLICKER_OFFSET_25*10 ;
+			break;
+		case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
+			if(OV5670_VIDEO_MODE_TARGET_FPS==30)
+			{
+				AutoFlicker_min_framelength = (OV5670.videoPclk*10000) /(OV5670_VIDEO_PERIOD_PIXEL_NUMS + OV5670.DummyPixels)/OV5670_AUTOFLICKER_OFFSET_30*10 ;
+			}
+			else if(OV5670_VIDEO_MODE_TARGET_FPS==15)
+			{
+				AutoFlicker_min_framelength = (OV5670.videoPclk*10000) /(OV5670_VIDEO_PERIOD_PIXEL_NUMS + OV5670.DummyPixels)/OV5670_AUTOFLICKER_OFFSET_15*10 ;
+			}
+			else
+			{
+				AutoFlicker_min_framelength = OV5670_VIDEO_PERIOD_LINE_NUMS + OV5670.DummyLines;
+			}
+			break;
+			
+		case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
+		default:
+			AutoFlicker_min_framelength = (OV5670.pvPclk*10000) /(OV5670_PV_PERIOD_PIXEL_NUMS + OV5670.DummyPixels)/OV5670_AUTOFLICKER_OFFSET_30*10 ;
+			break;
+	}
+
+	OV5670DB("AutoFlicker_min_framelength =%d,OV5670CurrentScenarioId =%d\n", AutoFlicker_min_framelength,OV5670CurrentScenarioId);
+
+	return AutoFlicker_min_framelength;
+
+}
+
+
+void OV5670_write_shutter(kal_uint32 shutter)
+{
+	kal_uint32 min_framelength = OV5670_PV_PERIOD_PIXEL_NUMS, max_shutter=0;
+	kal_uint32 line_length = 0;
+	kal_uint32 frame_length = 0;
+	unsigned long flags;
+
+	//for test
+	//shutter = 0x7fc;  //issue 
+	
+	
+    line_length  = GetOV5670LineLength();
+	frame_length = GetOV5670FrameLength();
+	
+	max_shutter  = frame_length-OV5670_SHUTTER_MARGIN;
+
+    frame_length = frame_length + OV5670_CalcExtra_For_ShutterMargin(shutter,max_shutter);
 	
 
-	/* 0x350A[0:1], 0x350B[0:7] AGC real gain */
-	/* [0:3] = N meams N /16 X	*/
-	/* [4:9] = M meams M X		 */
-	/* Total gain = M + N /16 X   */
+
+	if(OV5670.OV5670AutoFlickerMode == KAL_TRUE)
+	{
+        min_framelength = OV5670_CalcFrameLength_For_AutoFlicker();
+
+        if(frame_length < min_framelength)
+			frame_length = min_framelength;
+	}
+	
+
+	spin_lock_irqsave(&ov5670mipiraw_drv_lock,flags);
+	OV5670_FeatureControl_PERIOD_PixelNum = line_length;
+	OV5670_FeatureControl_PERIOD_LineNum = frame_length;
+	spin_unlock_irqrestore(&ov5670mipiraw_drv_lock,flags);
+
+	//Set total frame length  //VTS
+	OV5670_write_cmos_sensor(0x380e, (frame_length >> 8) & 0xFF);
+	OV5670_write_cmos_sensor(0x380f, frame_length & 0xFF);
+
+	//Set shutter 
+	OV5670_write_cmos_sensor(0x3500, (shutter>>12) & 0x0F);
+	OV5670_write_cmos_sensor(0x3501, (shutter>>4) & 0xFF);
+	OV5670_write_cmos_sensor(0x3502, (shutter<<4) & 0xF0);	  /* Don't use the fraction part. */
+
+	OV5670DB("ov5670 write shutter=%x, line_length=%x, frame_length=%x\n", shutter, line_length, frame_length);
+
+}
 
 
-	//
-	if (gain < BASEGAIN || gain > 8 * BASEGAIN) {
-		LOG_INF("Error gain setting");
+static kal_uint16 OV5670Reg2Gain(const kal_uint16 iReg)
+{
+    kal_uint16 iGain =0; 
 
-		if (gain < BASEGAIN)
-			gain = BASEGAIN;
-		else if (gain > 8 * BASEGAIN)
-			gain = 8 * BASEGAIN;		 
-		}
+	iGain = iReg*BASEGAIN/OV5670_GAIN_BASE;
+	return iGain;
+	
+}
 
-		iGain = gain/BASEGAIN;
-		
-		if(iGain<2){
-			ChangeFlag= 0x00;
-		}
-		else if(iGain<4){
-			ChangeFlag= 0x01;
-		}
-		else if(iGain<8){
-			ChangeFlag= 0x03;
-		}
-		else{
-			ChangeFlag= 0x07;
-		}
- 
-	reg_gain = gain2reg(gain);
-	spin_lock(&imgsensor_drv_lock);
-	imgsensor.gain = reg_gain; 
-	spin_unlock(&imgsensor_drv_lock);
-	LOG_INF("gain = %d ,reg[0x366a]= %d, reg_gain = 0x%x\n ", gain, ChangeFlag, reg_gain);
+static kal_uint16 OV5670Gain2Reg(const kal_uint16 Gain)
+{
+    kal_uint32 iReg = 0x0000;
+	kal_uint32 TempGain = BASEGAIN;
 
-	write_cmos_sensor(0x301d, 0xf0);
-	write_cmos_sensor(0x3209, 0x00);
-	write_cmos_sensor(0x320a, 0x01);
+
+	TempGain = Gain;
+	if(TempGain < BASEGAIN){
+		TempGain = BASEGAIN;
+		//OV5670DB("###ov5670 write gain underflow### Gain =%x\n", Gain);
+	}
+	if(TempGain > 16*BASEGAIN){
+		TempGain = 16*BASEGAIN;
+		//OV5670DB("###ov5670 write gain overflow### Gain =%x\n", Gain);
+	}
+
+	iReg = (TempGain*OV5670_GAIN_BASE)/BASEGAIN;
+
+	//iReg = ((TempGain /BASEGAIN)<<7)+((TempGain % BASEGAIN)<<7/BASEGAIN);
+	iReg = iReg & 0xFFFF;
+
+	//OV5670DB("###ov5670 write Reg ### iReg =%x\n", iReg);
+
+    return iReg;
+
+}
+
+void write_OV5670_gain(kal_uint16 gain)
+{
+	kal_uint16 iGain =1;
+	kal_uint8 ChangeFlag=0x01;
+
+	kal_uint16 read_gain;
+	
+	iGain=(gain / OV5670_GAIN_BASE);
+
+	if(iGain<2){
+		ChangeFlag= 0x00;
+	}
+	else if(iGain<4){
+		ChangeFlag= 0x01;
+	}
+	else if(iGain<8){
+		ChangeFlag= 0x03;
+	}
+	else{
+		ChangeFlag= 0x07;
+	}
+
+	//ChangeFlag= 0x07;
+	
+	OV5670_write_cmos_sensor(0x301d, 0xf0);
+	OV5670_write_cmos_sensor(0x3209, 0x00);
+	OV5670_write_cmos_sensor(0x320a, 0x01);
 	
 	//group write  hold
-	//group 0:delay 0x366a for one frame
-	write_cmos_sensor(0x3208, 0x00);
-	write_cmos_sensor(0x366a, ChangeFlag);
-	write_cmos_sensor(0x3208, 0x10);
+	//group 0:delay 0x366a for one frame,then active with gain
+	OV5670_write_cmos_sensor(0x3208, 0x00);
+	OV5670_write_cmos_sensor(0x366a, ChangeFlag);
+	OV5670_write_cmos_sensor(0x3208, 0x10);
 
 	//group 1:all other registers( gain)
-	write_cmos_sensor(0x3208, 0x01);
-	write_cmos_sensor(0x3508, reg_gain >> 8);
-	write_cmos_sensor(0x3509, reg_gain & 0xFF);    
-
-	write_cmos_sensor(0x3208, 0x11);
+	OV5670_write_cmos_sensor(0x3208, 0x01);
+	OV5670_write_cmos_sensor(0x3508,(gain>>8));
+    OV5670_write_cmos_sensor(0x3509,(gain&0xff));
+	
+	OV5670_write_cmos_sensor(0x3208, 0x11);
 
 	//group lanch
-	write_cmos_sensor(0x320B, 0x15);
-	write_cmos_sensor(0x3208, 0xA1);
-	
-	return gain;
-}	/*	set_gain  */
+	OV5670_write_cmos_sensor(0x320B, 0x15);
+	OV5670_write_cmos_sensor(0x3208, 0xA1);
 
+	//read_gain=(((OV5670_read_cmos_sensor(0x3508)&0x1F) << 8) | OV5670_read_cmos_sensor(0x3509));
+	//OV5670DB("[OV5670_SetGain]0x3508|0x3509=0x%x \n",read_gain);
+	//OV5670DB("[OV5670_SetGain]0x366a=%d \n",(OV5670_read_cmos_sensor(0x366a)));
 
-
-
-
-static void set_mirror_flip(kal_uint8 image_mirror)
-{
-	LOG_INF("image_mirror = %d\n", image_mirror);
-
-	/********************************************************
-	   *
-	   *   0x3820[2] ISP Vertical flip
-	   *   0x3820[1] Sensor Vertical flip
-	   *
-	   *   0x3821[2] ISP Horizontal mirror
-	   *   0x3821[1] Sensor Horizontal mirror
-	   *
-	   *   ISP and Sensor flip or mirror register bit should be the same!!
-	   *
-	   ********************************************************/
-	
-	switch (image_mirror) {
-		case IMAGE_NORMAL:
-			write_cmos_sensor(0x3820,((read_cmos_sensor(0x3820) & 0xF9) | 0x00));
-			write_cmos_sensor(0x3821,((read_cmos_sensor(0x3821) & 0xF9) | 0x06));
-			break;
-		case IMAGE_H_MIRROR:
-			write_cmos_sensor(0x3820,((read_cmos_sensor(0x3820) & 0xF9) | 0x00));
-			write_cmos_sensor(0x3821,((read_cmos_sensor(0x3821) & 0xF9) | 0x00));
-			break;
-		case IMAGE_V_MIRROR:
-			write_cmos_sensor(0x3820,((read_cmos_sensor(0x3820) & 0xF9) | 0x06));
-			write_cmos_sensor(0x3821,((read_cmos_sensor(0x3821) & 0xF9) | 0x06));		
-			break;
-		case IMAGE_HV_MIRROR:
-			write_cmos_sensor(0x3820,((read_cmos_sensor(0x3820) & 0xF9) | 0x06));
-			write_cmos_sensor(0x3821,((read_cmos_sensor(0x3821) & 0xF9) | 0x00));
-			break;
-		default:
-			LOG_INF("Error image_mirror setting\n");
-	}
+	return;
 
 }
 
-/*************************************************************************
-* FUNCTION
-*	night_mode
-*
-* DESCRIPTION
-*	This function night mode of sensor.
-*
-* PARAMETERS
-*	bEnable: KAL_TRUE -> enable night mode, otherwise, disable night mode
-*
-* RETURNS
-*	None
-*
-* GLOBALS AFFECTED
-*
-*************************************************************************/
-static void night_mode(kal_bool enable)
+void OV5670_SetGain(UINT16 iGain)
 {
-/*No Need to implement this function*/ 
-}	/*	night_mode	*/
+	unsigned long flags;
+	spin_lock_irqsave(&ov5670mipiraw_drv_lock,flags);
 
-static void sensor_init(void)
-{
-	LOG_INF("OV5670_Sensor_Init_2lane E\n");
+	OV5670DB("OV5670_SetGain iGain = %d :\n ",iGain);
 	
-	write_cmos_sensor(0x0103,0x01);// ; software reset
-	mDELAY(10);
-	write_cmos_sensor(0x0100, 0x00);// ; software standby
-	write_cmos_sensor(0x0300, 0x04); 
-	write_cmos_sensor(0x0301, 0x00); 
-	write_cmos_sensor(0x0302, 0x69); //;78 MIPI datarate 960 -> 840
-	write_cmos_sensor(0x0303, 0x00); 
-	write_cmos_sensor(0x0304, 0x03); 
-	write_cmos_sensor(0x0305, 0x01); 
-	write_cmos_sensor(0x0306, 0x01); 
-	write_cmos_sensor(0x030a, 0x00); 
-	write_cmos_sensor(0x030b, 0x00); 
-	write_cmos_sensor(0x030c, 0x00); 
-	write_cmos_sensor(0x030d, 0x1e); 
-	write_cmos_sensor(0x030e, 0x00); 
-	write_cmos_sensor(0x030f, 0x06); 
-	write_cmos_sensor(0x0312, 0x01); 
-	write_cmos_sensor(0x3000, 0x00); 
-	write_cmos_sensor(0x3002, 0x61); 
-	write_cmos_sensor(0x3005, 0xf0); 
-	write_cmos_sensor(0x3007, 0x00); 
-	write_cmos_sensor(0x300d, 0x00); 
-	write_cmos_sensor(0x3010, 0x40); 
-	write_cmos_sensor(0x3015, 0x0f); 
-	write_cmos_sensor(0x3018, 0x32); 
-	write_cmos_sensor(0x301a, 0xf0); 
-	write_cmos_sensor(0x301b, 0xf0); 
-	write_cmos_sensor(0x301c, 0xf0); 
-	write_cmos_sensor(0x301d, 0xf0); 
-	write_cmos_sensor(0x301e, 0xf0); 
-	write_cmos_sensor(0x3030, 0x00); 
-	write_cmos_sensor(0x3031, 0x0a); 
-	write_cmos_sensor(0x303c, 0xff); 
-	write_cmos_sensor(0x303e, 0xff); 
-	write_cmos_sensor(0x3040, 0xf0); 
-	write_cmos_sensor(0x3041, 0x00); 
-	write_cmos_sensor(0x3042, 0xf0); 
-	write_cmos_sensor(0x3106, 0x11); 
-	write_cmos_sensor(0x3500, 0x00); 
-	write_cmos_sensor(0x3501, 0x7b); 
-	write_cmos_sensor(0x3502, 0x00); 
-	write_cmos_sensor(0x3503, 0x04); 
-	write_cmos_sensor(0x3504, 0x03); 
-	write_cmos_sensor(0x3505, 0x83); 
-	write_cmos_sensor(0x3508, 0x07); 
-	write_cmos_sensor(0x3509, 0x80); 
-	write_cmos_sensor(0x350e, 0x04); 
-	write_cmos_sensor(0x350f, 0x00); 
-	write_cmos_sensor(0x3510, 0x00); 
-	write_cmos_sensor(0x3511, 0x02); 
-	write_cmos_sensor(0x3512, 0x00); 
-	write_cmos_sensor(0x3601, 0xc8); 
-	write_cmos_sensor(0x3610, 0x88); 
-	write_cmos_sensor(0x3612, 0x48); 
-	write_cmos_sensor(0x3614, 0x5b); 
-	write_cmos_sensor(0x3615, 0x96); 
-	write_cmos_sensor(0x3621, 0xd0); 
-	write_cmos_sensor(0x3622, 0x00); 
-	write_cmos_sensor(0x3623, 0x00);  
-	write_cmos_sensor(0x3633, 0x13); 
-	write_cmos_sensor(0x3634, 0x13); 
-	write_cmos_sensor(0x3635, 0x13); 
-	write_cmos_sensor(0x3636, 0x13); 
-	write_cmos_sensor(0x3645, 0x13); 
-	write_cmos_sensor(0x3646, 0x82); 
-	write_cmos_sensor(0x3650, 0x00); 
-	write_cmos_sensor(0x3652, 0xff); 
-	write_cmos_sensor(0x3655, 0x20); 
-	write_cmos_sensor(0x3656, 0xff); 
-	write_cmos_sensor(0x365a, 0xff); 
-	write_cmos_sensor(0x365e, 0xff); 
-	write_cmos_sensor(0x3668, 0x00); 
-	write_cmos_sensor(0x366a, 0x07); 
-	write_cmos_sensor(0x366e, 0x10); 
-	write_cmos_sensor(0x366d, 0x00); 
-	write_cmos_sensor(0x366f, 0x80); 
-	write_cmos_sensor(0x3700, 0x28); 
-	write_cmos_sensor(0x3701, 0x10); 
-	write_cmos_sensor(0x3702, 0x3a); 
-	write_cmos_sensor(0x3703, 0x19); 
-	write_cmos_sensor(0x3704, 0x10); 
-	write_cmos_sensor(0x3705, 0x00); 
-	write_cmos_sensor(0x3706, 0x66); 
-	write_cmos_sensor(0x3707, 0x08); 
-	write_cmos_sensor(0x3708, 0x34); 
-	write_cmos_sensor(0x3709, 0x40); 
-	write_cmos_sensor(0x370a, 0x01); 
-	write_cmos_sensor(0x370b, 0x1b); 
-	write_cmos_sensor(0x3714, 0x24); 
-	write_cmos_sensor(0x371a, 0x3e); 
-	write_cmos_sensor(0x3733, 0x00); 
-	write_cmos_sensor(0x3734, 0x00); 
-	write_cmos_sensor(0x373a, 0x05); 
-	write_cmos_sensor(0x373b, 0x06); 
-	write_cmos_sensor(0x373c, 0x0a); 
-	write_cmos_sensor(0x373f, 0xa0); 
-	write_cmos_sensor(0x3755, 0x00); 
-	write_cmos_sensor(0x3758, 0x00); 
-	write_cmos_sensor(0x375b, 0x0e);
-	write_cmos_sensor(0x3766, 0x5f); 
-	write_cmos_sensor(0x3768, 0x00); 
-	write_cmos_sensor(0x3769, 0x22); 
-	write_cmos_sensor(0x3773, 0x08); 
-	write_cmos_sensor(0x3774, 0x1f); 
-	write_cmos_sensor(0x3776, 0x06); 
-	write_cmos_sensor(0x37a0, 0x88); 
-	write_cmos_sensor(0x37a1, 0x5c); 
-	write_cmos_sensor(0x37a7, 0x88); 
-	write_cmos_sensor(0x37a8, 0x70); 
-	write_cmos_sensor(0x37aa, 0x88); 
-	write_cmos_sensor(0x37ab, 0x48); 
-	write_cmos_sensor(0x37b3, 0x66); 
-	write_cmos_sensor(0x37c2, 0x04); 
-	write_cmos_sensor(0x37c5, 0x00); 
-	write_cmos_sensor(0x37c8, 0x00); 
-	write_cmos_sensor(0x3800, 0x00); 
-	write_cmos_sensor(0x3801, 0x0c); 
-	write_cmos_sensor(0x3802, 0x00); 
-	write_cmos_sensor(0x3803, 0x04); 
-	write_cmos_sensor(0x3804, 0x0a); 
-	write_cmos_sensor(0x3805, 0x33); 
-	write_cmos_sensor(0x3806, 0x07); 
-	write_cmos_sensor(0x3807, 0xa3); 
-	write_cmos_sensor(0x3808, 0x0a); 
-	write_cmos_sensor(0x3809, 0x20); 
-	write_cmos_sensor(0x380a, 0x07); 
-	write_cmos_sensor(0x380b, 0x98); 
-	write_cmos_sensor(0x380c, 0x06); // ;06
-	write_cmos_sensor(0x380d, 0x8c); // ;8c
-	write_cmos_sensor(0x380e, 0x07); 
-	write_cmos_sensor(0x380f, 0xb8); 
-	write_cmos_sensor(0x3811, 0x04); 
-	write_cmos_sensor(0x3813, 0x02); 
-	write_cmos_sensor(0x3814, 0x01); 
-	write_cmos_sensor(0x3815, 0x01); 
-	write_cmos_sensor(0x3816, 0x00); 
-	write_cmos_sensor(0x3817, 0x00); 
-	write_cmos_sensor(0x3818, 0x00); 
-	write_cmos_sensor(0x3819, 0x00); 
-	write_cmos_sensor(0x3820, 0x80); 
-	write_cmos_sensor(0x3821, 0x46); 
-	write_cmos_sensor(0x3822, 0x48); 
-	write_cmos_sensor(0x3826, 0x00); 
-	write_cmos_sensor(0x3827, 0x08); 
-	write_cmos_sensor(0x382a, 0x01); 
-	write_cmos_sensor(0x382b, 0x01); 
-	write_cmos_sensor(0x3830, 0x08); 
-	write_cmos_sensor(0x3836, 0x02); 
-	write_cmos_sensor(0x3837, 0x00); 
-	write_cmos_sensor(0x3838, 0x10); 
-	write_cmos_sensor(0x3841, 0xff); 
-	write_cmos_sensor(0x3846, 0x48); 
-	write_cmos_sensor(0x3861, 0x00); 
-	write_cmos_sensor(0x3862, 0x04); 
-	write_cmos_sensor(0x3863, 0x06); 
-	write_cmos_sensor(0x3a11, 0x01); 
-	write_cmos_sensor(0x3a12, 0x78); 
-	write_cmos_sensor(0x3b00, 0x00); 
-	write_cmos_sensor(0x3b02, 0x00); 
-	write_cmos_sensor(0x3b03, 0x00); 
-	write_cmos_sensor(0x3b04, 0x00); 
-	write_cmos_sensor(0x3b05, 0x00); 
-	write_cmos_sensor(0x3c00, 0x89); 
-	write_cmos_sensor(0x3c01, 0xab); 
-	write_cmos_sensor(0x3c02, 0x01); 
-	write_cmos_sensor(0x3c03, 0x00); 
-	write_cmos_sensor(0x3c04, 0x00); 
-	write_cmos_sensor(0x3c05, 0x03); 
-	write_cmos_sensor(0x3c06, 0x00); 
-	write_cmos_sensor(0x3c07, 0x05); 
-	write_cmos_sensor(0x3c0c, 0x00); 
-	write_cmos_sensor(0x3c0d, 0x00); 
-	write_cmos_sensor(0x3c0e, 0x00); 
-	write_cmos_sensor(0x3c0f, 0x00); 
-	write_cmos_sensor(0x3c40, 0x00); 
-	write_cmos_sensor(0x3c41, 0xa3); 
-	write_cmos_sensor(0x3c43, 0x7d); 
-	write_cmos_sensor(0x3c45, 0xd7); 
-	write_cmos_sensor(0x3c47, 0xfc); 
-	write_cmos_sensor(0x3c50, 0x05); 
-	write_cmos_sensor(0x3c52, 0xaa); 
-	write_cmos_sensor(0x3c54, 0x71); 
-	write_cmos_sensor(0x3c56, 0x80); 
-	write_cmos_sensor(0x3d85, 0x17); 
-	write_cmos_sensor(0x3f03, 0x00); 
-	write_cmos_sensor(0x3f0a, 0x00); 
-	write_cmos_sensor(0x3f0b, 0x00); 
-	write_cmos_sensor(0x4001, 0x60); 
-	write_cmos_sensor(0x4009, 0x0d); 
-	write_cmos_sensor(0x4020, 0x00); 
-	write_cmos_sensor(0x4021, 0x00); 
-	write_cmos_sensor(0x4022, 0x00); 
-	write_cmos_sensor(0x4023, 0x00); 
-	write_cmos_sensor(0x4024, 0x00); 
-	write_cmos_sensor(0x4025, 0x00); 
-	write_cmos_sensor(0x4026, 0x00); 
-	write_cmos_sensor(0x4027, 0x00); 
-	write_cmos_sensor(0x4028, 0x00); 
-	write_cmos_sensor(0x4029, 0x00); 
-	write_cmos_sensor(0x402a, 0x00); 
-	write_cmos_sensor(0x402b, 0x00); 
-	write_cmos_sensor(0x402c, 0x00); 
-	write_cmos_sensor(0x402d, 0x00); 
-	write_cmos_sensor(0x402e, 0x00); 
-	write_cmos_sensor(0x402f, 0x00); 
-	write_cmos_sensor(0x4040, 0x00); 
-	write_cmos_sensor(0x4041, 0x03); 
-	write_cmos_sensor(0x4042, 0x00); 
-	write_cmos_sensor(0x4043, 0x7a); 
-	write_cmos_sensor(0x4044, 0x00); 
-	write_cmos_sensor(0x4045, 0x7a); 
-	write_cmos_sensor(0x4046, 0x00); 
-	write_cmos_sensor(0x4047, 0x7a); 
-	write_cmos_sensor(0x4048, 0x00); 
-	write_cmos_sensor(0x4049, 0x7a); 
-	write_cmos_sensor(0x4303, 0x00); 
-	write_cmos_sensor(0x4307, 0x30); 
-	write_cmos_sensor(0x4500, 0x58); 
-	write_cmos_sensor(0x4501, 0x04); 
-	write_cmos_sensor(0x4502, 0x40); 
-	write_cmos_sensor(0x4503, 0x10); 
-	write_cmos_sensor(0x4508, 0xaa); 
-	write_cmos_sensor(0x4509, 0xaa); 
-	write_cmos_sensor(0x450a, 0x00); 
-	write_cmos_sensor(0x450b, 0x00); 
-	write_cmos_sensor(0x4600, 0x01); 
-	write_cmos_sensor(0x4601, 0x03); 
-	write_cmos_sensor(0x4700, 0xa4); 
-	write_cmos_sensor(0x4800, 0x6c); 
-	write_cmos_sensor(0x4816, 0x53); 
-	write_cmos_sensor(0x481f, 0x40); 
-	write_cmos_sensor(0x4837, 0x13); // ;11 mipi global timing datarate 940 -> 840
-	write_cmos_sensor(0x5000, 0x56); 
-	write_cmos_sensor(0x5001, 0x01); 
-	write_cmos_sensor(0x5002, 0x28); 
-	write_cmos_sensor(0x5004, 0x0c); 
-	write_cmos_sensor(0x5006, 0x0c); 
-	write_cmos_sensor(0x5007, 0xe0); 
-	write_cmos_sensor(0x5008, 0x01); 
-	write_cmos_sensor(0x5009, 0xb0); 
-	write_cmos_sensor(0x5901, 0x00); 
-	write_cmos_sensor(0x5a01, 0x00); 
-	write_cmos_sensor(0x5a03, 0x00); 
-	write_cmos_sensor(0x5a04, 0x0c); 
-	write_cmos_sensor(0x5a05, 0xe0); 
-	write_cmos_sensor(0x5a06, 0x09); 
-	write_cmos_sensor(0x5a07, 0xb0); 
-	write_cmos_sensor(0x5a08, 0x06); 
-	write_cmos_sensor(0x5e00, 0x00); 
-	write_cmos_sensor(0x3618, 0x2a); 
-								   
-	//;Ally031414					  
-	write_cmos_sensor(0x3734, 0x40); //	;; Improve HFPN
-	write_cmos_sensor(0x5b00, 0x01);  // ;; [2:0] otp start addr[10:8]
-	write_cmos_sensor(0x5b01, 0x10);  // ;; [7:0] otp start addr[7:0]
-	write_cmos_sensor(0x5b02, 0x01);  // ;; [2:0] otp end addr[10:8]
-	write_cmos_sensor(0x5b03, 0xDB);  // ;; [7:0] otp end addr[7:0]
-	write_cmos_sensor(0x3d8c, 0x71); //; Header address high byte
-	write_cmos_sensor(0x3d8d, 0xEA); //; Header address low byte
-	write_cmos_sensor(0x4017, 0x08); // ; threshold= 2LSB for full size
-								  
-	//;Strong DPC1.53				 
-	write_cmos_sensor(0x5780, 0x3e); 
-	write_cmos_sensor(0x5781, 0x0f); 
-	write_cmos_sensor(0x5782, 0x44); 
-	write_cmos_sensor(0x5783, 0x02); 
-	write_cmos_sensor(0x5784, 0x01); 
-	write_cmos_sensor(0x5785, 0x00); 
-	write_cmos_sensor(0x5786, 0x00); 
-	write_cmos_sensor(0x5787, 0x04); 
-	write_cmos_sensor(0x5788, 0x02); 
-	write_cmos_sensor(0x5789, 0x0f); 
-	write_cmos_sensor(0x578a, 0xfd); 
-	write_cmos_sensor(0x578b, 0xf5); 
-	write_cmos_sensor(0x578c, 0xf5); 
-	write_cmos_sensor(0x578d, 0x03); 
-	write_cmos_sensor(0x578e, 0x08); 
-	write_cmos_sensor(0x578f, 0x0c); 
-	write_cmos_sensor(0x5790, 0x08); 
-	write_cmos_sensor(0x5791, 0x04); 
-	write_cmos_sensor(0x5792, 0x00); 
-	write_cmos_sensor(0x5793, 0x52); 
-	write_cmos_sensor(0x5794, 0xa3); 
-	//;Ping 					  
-	write_cmos_sensor(0x380e, 0x07); //; fps fine adjustment
-	write_cmos_sensor(0x380f, 0xfd); //; fps fine adjustment
-	write_cmos_sensor(0x3503, 0x00); //; real gain [2]   gain no delay, shutter no delay
-	//;added					 
+	OV5670.realGain = iGain;
+	OV5670.sensorGlobalGain = OV5670Gain2Reg(iGain);
+	spin_unlock_irqrestore(&ov5670mipiraw_drv_lock,flags);
 
-	write_cmos_sensor(0x0100, 0x00); //;01
+	write_OV5670_gain(OV5670.sensorGlobalGain);
+	OV5670DB(" [OV5670_SetGain]OV5670.sensorGlobalGain=0x%x,OV5670.realGain =%d",OV5670.sensorGlobalGain,
+		OV5670.realGain); 
 
+	//temperature test
+	//OV5670_write_cmos_sensor(0x4d12,0x01);
+	//OV5670DB("Temperature read_reg  0x4d13  =%x \n",OV5670_read_cmos_sensor(0x4d13));
+}   
 
-}	/*	sensor_init  */
-
-
-static void preview_setting(void)
+kal_uint16 read_OV5670_gain(void)
 {
-	LOG_INF(" OV5670PreviewSetting_2lane enter\n");
+	kal_uint16 read_gain=0;
+
+	read_gain=(((OV5670_read_cmos_sensor(0x3508)&0x1F) << 8) | OV5670_read_cmos_sensor(0x3509));
+
+	spin_lock(&ov5670mipiraw_drv_lock);
+	OV5670.sensorGlobalGain = read_gain;
+	OV5670.realGain = OV5670Reg2Gain(OV5670.sensorGlobalGain);
+	spin_unlock(&ov5670mipiraw_drv_lock);
+
+	OV5670DB("OV5670.sensorGlobalGain=0x%x,OV5670.realGain=%d\n",OV5670.sensorGlobalGain,OV5670.realGain);
+
+	return OV5670.sensorGlobalGain;
+}  
+
+
+#if 1
+void OV5670_camera_para_to_sensor(void)
+{
+    kal_uint32    i;
+    for(i=0; 0xFFFFFFFF!=OV5670SensorReg[i].Addr; i++)
+    {
+        OV5670_write_cmos_sensor(OV5670SensorReg[i].Addr, OV5670SensorReg[i].Para);
+    }
+    for(i=ENGINEER_START_ADDR; 0xFFFFFFFF!=OV5670SensorReg[i].Addr; i++)
+    {
+        OV5670_write_cmos_sensor(OV5670SensorReg[i].Addr, OV5670SensorReg[i].Para);
+    }
+    for(i=FACTORY_START_ADDR; i<FACTORY_END_ADDR; i++)
+    {
+        OV5670_write_cmos_sensor(OV5670SensorCCT[i].Addr, OV5670SensorCCT[i].Para);
+    }
+}
+
+void OV5670_sensor_to_camera_para(void)
+{
+    kal_uint32    i, temp_data;
+    for(i=0; 0xFFFFFFFF!=OV5670SensorReg[i].Addr; i++)
+    {
+         temp_data = OV5670_read_cmos_sensor(OV5670SensorReg[i].Addr);
+		 spin_lock(&ov5670mipiraw_drv_lock);
+		 OV5670SensorReg[i].Para =temp_data;
+		 spin_unlock(&ov5670mipiraw_drv_lock);
+    }
+    for(i=ENGINEER_START_ADDR; 0xFFFFFFFF!=OV5670SensorReg[i].Addr; i++)
+    {
+        temp_data = OV5670_read_cmos_sensor(OV5670SensorReg[i].Addr);
+		spin_lock(&ov5670mipiraw_drv_lock);
+		OV5670SensorReg[i].Para = temp_data;
+		spin_unlock(&ov5670mipiraw_drv_lock);
+    }
+}
+
+kal_int32  OV5670_get_sensor_group_count(void)
+{
+    return GROUP_TOTAL_NUMS;
+}
+
+void OV5670_get_sensor_group_info(kal_uint16 group_idx, kal_int8* group_name_ptr, kal_int32* item_count_ptr)
+{
+   switch (group_idx)
+   {
+        case PRE_GAIN:
+            sprintf((char *)group_name_ptr, "CCT");
+            *item_count_ptr = 2;
+            break;
+        case CMMCLK_CURRENT:
+            sprintf((char *)group_name_ptr, "CMMCLK Current");
+            *item_count_ptr = 1;
+            break;
+        case FRAME_RATE_LIMITATION:
+            sprintf((char *)group_name_ptr, "Frame Rate Limitation");
+            *item_count_ptr = 2;
+            break;
+        case REGISTER_EDITOR:
+            sprintf((char *)group_name_ptr, "Register Editor");
+            *item_count_ptr = 2;
+            break;
+        default:
+            ASSERT(0);
+}
+}
+
+void OV5670_get_sensor_item_info(kal_uint16 group_idx,kal_uint16 item_idx, MSDK_SENSOR_ITEM_INFO_STRUCT* info_ptr)
+{
+    kal_int16 temp_reg=0;
+    kal_uint16 temp_gain=0, temp_addr=0, temp_para=0;
+
+    switch (group_idx)
+    {
+        case PRE_GAIN:
+           switch (item_idx)
+          {
+              case 0:
+                sprintf((char *)info_ptr->ItemNamePtr,"Pregain-R");
+                  temp_addr = PRE_GAIN_R_INDEX;
+              break;
+              case 1:
+                sprintf((char *)info_ptr->ItemNamePtr,"Pregain-Gr");
+                  temp_addr = PRE_GAIN_Gr_INDEX;
+              break;
+              case 2:
+                sprintf((char *)info_ptr->ItemNamePtr,"Pregain-Gb");
+                  temp_addr = PRE_GAIN_Gb_INDEX;
+              break;
+              case 3:
+                sprintf((char *)info_ptr->ItemNamePtr,"Pregain-B");
+                  temp_addr = PRE_GAIN_B_INDEX;
+              break;
+              case 4:
+                 sprintf((char *)info_ptr->ItemNamePtr,"SENSOR_BASEGAIN");
+                 temp_addr = SENSOR_BASEGAIN;
+              break;
+              default:
+                 ASSERT(0);
+          }
+
+            temp_para= OV5670SensorCCT[temp_addr].Para;
+			//temp_gain= (temp_para/OV5670.sensorBaseGain) * 1000;
+
+            info_ptr->ItemValue=temp_gain;
+            info_ptr->IsTrueFalse=KAL_FALSE;
+            info_ptr->IsReadOnly=KAL_FALSE;
+            info_ptr->IsNeedRestart=KAL_FALSE;
+            info_ptr->Min= OV5670_MIN_ANALOG_GAIN * 1000;
+            info_ptr->Max= OV5670_MAX_ANALOG_GAIN * 1000;
+            break;
+        case CMMCLK_CURRENT:
+            switch (item_idx)
+            {
+                case 0:
+                    sprintf((char *)info_ptr->ItemNamePtr,"Drv Cur[2,4,6,8]mA");
+
+                    //temp_reg=MT9P017SensorReg[CMMCLK_CURRENT_INDEX].Para;
+                    temp_reg = ISP_DRIVING_2MA;
+                    if(temp_reg==ISP_DRIVING_2MA)
+                    {
+                        info_ptr->ItemValue=2;
+                    }
+                    else if(temp_reg==ISP_DRIVING_4MA)
+                    {
+                        info_ptr->ItemValue=4;
+                    }
+                    else if(temp_reg==ISP_DRIVING_6MA)
+                    {
+                        info_ptr->ItemValue=6;
+                    }
+                    else if(temp_reg==ISP_DRIVING_8MA)
+                    {
+                        info_ptr->ItemValue=8;
+                    }
+
+                    info_ptr->IsTrueFalse=KAL_FALSE;
+                    info_ptr->IsReadOnly=KAL_FALSE;
+                    info_ptr->IsNeedRestart=KAL_TRUE;
+                    info_ptr->Min=2;
+                    info_ptr->Max=8;
+                    break;
+                default:
+                    ASSERT(0);
+            }
+            break;
+        case FRAME_RATE_LIMITATION:
+            switch (item_idx)
+            {
+                case 0:
+                    sprintf((char *)info_ptr->ItemNamePtr,"Max Exposure Lines");
+                    info_ptr->ItemValue=    111;  
+                    info_ptr->IsTrueFalse=KAL_FALSE;
+                    info_ptr->IsReadOnly=KAL_TRUE;
+                    info_ptr->IsNeedRestart=KAL_FALSE;
+                    info_ptr->Min=0;
+                    info_ptr->Max=0;
+                    break;
+                case 1:
+                    sprintf((char *)info_ptr->ItemNamePtr,"Min Frame Rate");
+                    info_ptr->ItemValue=12;
+                    info_ptr->IsTrueFalse=KAL_FALSE;
+                    info_ptr->IsReadOnly=KAL_TRUE;
+                    info_ptr->IsNeedRestart=KAL_FALSE;
+                    info_ptr->Min=0;
+                    info_ptr->Max=0;
+                    break;
+                default:
+                    ASSERT(0);
+            }
+            break;
+        case REGISTER_EDITOR:
+            switch (item_idx)
+            {
+                case 0:
+                    sprintf((char *)info_ptr->ItemNamePtr,"REG Addr.");
+                    info_ptr->ItemValue=0;
+                    info_ptr->IsTrueFalse=KAL_FALSE;
+                    info_ptr->IsReadOnly=KAL_FALSE;
+                    info_ptr->IsNeedRestart=KAL_FALSE;
+                    info_ptr->Min=0;
+                    info_ptr->Max=0xFFFF;
+                    break;
+                case 1:
+                    sprintf((char *)info_ptr->ItemNamePtr,"REG Value");
+                    info_ptr->ItemValue=0;
+                    info_ptr->IsTrueFalse=KAL_FALSE;
+                    info_ptr->IsReadOnly=KAL_FALSE;
+                    info_ptr->IsNeedRestart=KAL_FALSE;
+                    info_ptr->Min=0;
+                    info_ptr->Max=0xFFFF;
+                    break;
+                default:
+                ASSERT(0);
+            }
+            break;
+        default:
+            ASSERT(0);
+    }
+}
+
+
+
+kal_bool OV5670_set_sensor_item_info(kal_uint16 group_idx, kal_uint16 item_idx, kal_int32 ItemValue)
+{
+   kal_uint16  temp_gain=0,temp_addr=0, temp_para=0;
+
+   switch (group_idx)
+    {
+        case PRE_GAIN:
+            switch (item_idx)
+            {
+              case 0:
+                temp_addr = PRE_GAIN_R_INDEX;
+              break;
+              case 1:
+                temp_addr = PRE_GAIN_Gr_INDEX;
+              break;
+              case 2:
+                temp_addr = PRE_GAIN_Gb_INDEX;
+              break;
+              case 3:
+                temp_addr = PRE_GAIN_B_INDEX;
+              break;
+              case 4:
+                temp_addr = SENSOR_BASEGAIN;
+              break;
+              default:
+                 ASSERT(0);
+          }
+
+		 temp_gain=((ItemValue*BASEGAIN+500)/1000);			//+500:get closed integer value
+
+		  if(temp_gain>=1*BASEGAIN && temp_gain<=16*BASEGAIN)
+          {
+//             temp_para=(temp_gain * OV5670.sensorBaseGain + BASEGAIN/2)/BASEGAIN;
+          }
+          else
+			  ASSERT(0);
+
+		  spin_lock(&ov5670mipiraw_drv_lock);
+          OV5670SensorCCT[temp_addr].Para = temp_para;
+		  spin_unlock(&ov5670mipiraw_drv_lock);
+          OV5670_write_cmos_sensor(OV5670SensorCCT[temp_addr].Addr,temp_para);
+
+            break;
+        case CMMCLK_CURRENT:
+            switch (item_idx)
+            {
+                case 0:
+                    //no need to apply this item for driving current
+                    break;
+                default:
+                    ASSERT(0);
+            }
+            break;
+        case FRAME_RATE_LIMITATION:
+            ASSERT(0);
+            break;
+        case REGISTER_EDITOR:
+            switch (item_idx)
+            {
+                case 0:
+					spin_lock(&ov5670mipiraw_drv_lock);
+                    OV5670_FAC_SENSOR_REG=ItemValue;
+					spin_unlock(&ov5670mipiraw_drv_lock);
+                    break;
+                case 1:
+                    OV5670_write_cmos_sensor(OV5670_FAC_SENSOR_REG,ItemValue);
+                    break;
+                default:
+                    ASSERT(0);
+            }
+            break;
+        default:
+            ASSERT(0);
+    }
+    return KAL_TRUE;
+}
+#endif
+
+
+static void OV5670_SetDummy( const kal_uint32 iPixels, const kal_uint32 iLines )
+{
+	kal_uint32 line_length = 0;
+	kal_uint32 frame_length = 0;
+
+	if ( SENSOR_MODE_PREVIEW == OV5670.sensorMode )
+	{
+		line_length = OV5670_PV_PERIOD_PIXEL_NUMS + iPixels;
+		frame_length = OV5670_PV_PERIOD_LINE_NUMS + iLines;
+	}
+	else if( SENSOR_MODE_VIDEO== OV5670.sensorMode )
+	{
+		line_length = OV5670_VIDEO_PERIOD_PIXEL_NUMS + iPixels;
+		frame_length = OV5670_VIDEO_PERIOD_LINE_NUMS + iLines;
+	}
+	else
+	{
+		line_length = OV5670_FULL_PERIOD_PIXEL_NUMS + iPixels;
+		frame_length = OV5670_FULL_PERIOD_LINE_NUMS + iLines;
+	}
+
+	spin_lock(&ov5670mipiraw_drv_lock);
+	OV5670_FeatureControl_PERIOD_PixelNum = line_length;
+	OV5670_FeatureControl_PERIOD_LineNum = frame_length;
+	spin_unlock(&ov5670mipiraw_drv_lock);
+
+	//Set total frame length
+	OV5670_write_cmos_sensor(0x380e, (frame_length >> 8) & 0xFF);
+	OV5670_write_cmos_sensor(0x380f, frame_length & 0xFF);
+	//Set total line length
+	OV5670_write_cmos_sensor(0x380c, (line_length >> 8) & 0xFF);
+	OV5670_write_cmos_sensor(0x380d, line_length & 0xFF);
+
+}   
+
+
+void OV5670PreviewSetting(void)
+{
+	OV5670DB(" OV5670PreviewSetting_2lane enter\n");
+
+	/*  //
+	
+	//@@PV_Quarter_size_30fps_800Mbps/lane				  
+	//99 1296 960 										  
+	//;;102 3601	157c									  
+	//;;PCLK=HTS*VTS*fps=0x68c*0x7fd*30=1676*2045*30=102.85M
+
+		OV5670_write_cmos_sensor(0x0100, 0x00);  //
+	
+	OV5670_write_cmos_sensor(0x3501, 0x3d);  //
+	OV5670_write_cmos_sensor(0x366e, 0x08);  //
+	OV5670_write_cmos_sensor(0x370b, 0x1b);  //
+	OV5670_write_cmos_sensor(0x3808, 0x05);  //
+	OV5670_write_cmos_sensor(0x3809, 0x10);  //
+	OV5670_write_cmos_sensor(0x380a, 0x03);  //
+	OV5670_write_cmos_sensor(0x380b, 0xc0);  //
+	OV5670_write_cmos_sensor(0x380c, 0x06);  //
+	OV5670_write_cmos_sensor(0x380d, 0x8c);  //
+	OV5670_write_cmos_sensor(0x380e, 0x07);  //;03
+	OV5670_write_cmos_sensor(0x380f, 0xfd);  //;e0
+	OV5670_write_cmos_sensor(0x3814, 0x03);  //
+	OV5670_write_cmos_sensor(0x3820, 0x90);  //
+	OV5670_write_cmos_sensor(0x3821, 0x47);  //
+	OV5670_write_cmos_sensor(0x382a, 0x03);  //
+	OV5670_write_cmos_sensor(0x4009, 0x05);  //
+	OV5670_write_cmos_sensor(0x4502, 0x48);  //
+	OV5670_write_cmos_sensor(0x4508, 0x55);  //
+	OV5670_write_cmos_sensor(0x4509, 0x55);  //
+	OV5670_write_cmos_sensor(0x4600, 0x00);  //
+	OV5670_write_cmos_sensor(0x4601, 0x81);  //
+	OV5670_write_cmos_sensor(0x4017, 0x10);  //; threshold = 4LSB for Binning sum format.
+	OV5670_write_cmos_sensor(0x400a, 0x02);  //;
+	OV5670_write_cmos_sensor(0x400b, 0x00);  //; 
+	
+	OV5670_write_cmos_sensor(0x0100, 0x01);  //
+*/
 
 	//@@PV_Quarter_size_30fps_800Mbps/lane_1296x972							  
 	//99 1296 972 															  
 	//;;102 3601	157c														  
 	//;;PCLK=HTS*VTS*fps=0x68c*0x7fd*30=1676*2045*30=102.85M					  
 																			  
-	write_cmos_sensor(0x0100, 0x00);  // 	
+	OV5670_write_cmos_sensor(0x0100, 0x00);  // 	
 	
-	write_cmos_sensor(0x3501, 0x73);  // 							  
-	write_cmos_sensor(0x3502, 0x00);  // 							  
-	write_cmos_sensor(0x3508, 0x03);  // 							  
-	write_cmos_sensor(0x3509, 0x00);  // 	
-	write_cmos_sensor(0x3623, 0x00);	
-	write_cmos_sensor(0x366e, 0x08);  // 							  
-	write_cmos_sensor(0x370b, 0x1b);  // 							  
-	write_cmos_sensor(0x3808, 0x05);  // 							  
-	write_cmos_sensor(0x3809, 0x10);  // 							  
-	write_cmos_sensor(0x380a, 0x03);  // 							  
-	write_cmos_sensor(0x380b, 0xcc);  //;c0							  
-	write_cmos_sensor(0x380c, 0x06);  // 							  
-	write_cmos_sensor(0x380d, 0x8c);  // 							  
-	write_cmos_sensor(0x380e, 0x07);  //;03							  
-	write_cmos_sensor(0x380f, 0xfd);  //;e0	
-
-
+	OV5670_write_cmos_sensor(0x3501, 0x73);  // 							  
+	OV5670_write_cmos_sensor(0x3502, 0x00);  // 							  
+	OV5670_write_cmos_sensor(0x3508, 0x01);  // 							  
+	OV5670_write_cmos_sensor(0x3509, 0x80);  // 							  
+	OV5670_write_cmos_sensor(0x366e, 0x08);  // 							  
+	OV5670_write_cmos_sensor(0x370b, 0x1b);  // 							  
+	OV5670_write_cmos_sensor(0x3808, 0x05);  // 							  
+	OV5670_write_cmos_sensor(0x3809, 0x10);  // 							  
+	OV5670_write_cmos_sensor(0x380a, 0x03);  // 							  
+	OV5670_write_cmos_sensor(0x380b, 0xcc);  //;c0							  
+	OV5670_write_cmos_sensor(0x380c, 0x06);  // 							  
+	OV5670_write_cmos_sensor(0x380d, 0x8c);  // 							  
+	OV5670_write_cmos_sensor(0x380e, 0x07);  //;03							  
+	OV5670_write_cmos_sensor(0x380f, 0xfd);  //;e0							  
+	OV5670_write_cmos_sensor(0x3814, 0x03);  // 							  
+	OV5670_write_cmos_sensor(0x3820, 0x90);  // 							  
+	OV5670_write_cmos_sensor(0x3821, 0x47);  // 							  
+	OV5670_write_cmos_sensor(0x382a, 0x03);  // 							  
+	OV5670_write_cmos_sensor(0x3845, 0x02);  // 							  
+	OV5670_write_cmos_sensor(0x4009, 0x05);  // 							  
+	OV5670_write_cmos_sensor(0x4502, 0x48);  // 							  
+	OV5670_write_cmos_sensor(0x4508, 0x55);  // 							  
+	OV5670_write_cmos_sensor(0x4509, 0x55);  // 							  
+	OV5670_write_cmos_sensor(0x4600, 0x00);  // 							  
+	OV5670_write_cmos_sensor(0x4601, 0x81);  // 							  
+	OV5670_write_cmos_sensor(0x4017, 0x10);  //; threshold = 4LSB for Binning 
+	OV5670_write_cmos_sensor(0x400a, 0x02);  //;							  
+	OV5670_write_cmos_sensor(0x400b, 0x00);  //;	
 	
-	write_cmos_sensor(0x3814, 0x03);  // 							  
-	write_cmos_sensor(0x3820, 0x90);  // 							  
-	write_cmos_sensor(0x3821, 0x47);  // 							  
-	write_cmos_sensor(0x382a, 0x03);  // 	
-	
-
-	write_cmos_sensor(0x3845, 0x02);  // 							  
-	write_cmos_sensor(0x4009, 0x05);  // 							  
-	write_cmos_sensor(0x4502, 0x44);  // 							  
-	write_cmos_sensor(0x4508, 0x55);  // 							  
-	write_cmos_sensor(0x4509, 0x55);  // 	
-	write_cmos_sensor(0x450a, 0x00);  // 	
-	write_cmos_sensor(0x4600, 0x00);  // 							  
-	write_cmos_sensor(0x4601, 0x81);  // 							  
-	write_cmos_sensor(0x4017, 0x10);  //; threshold = 4LSB for Binning 
-	write_cmos_sensor(0x400a, 0x02);  //;							  
-	write_cmos_sensor(0x400b, 0x00);  //;	
-	
-	write_cmos_sensor(0x0100, 0x01);  // 
-
-	
-}	/*	preview_setting  */
-
-static void capture_setting(kal_uint16 currefps)
-{
-	LOG_INF("OV5670CaptureSetting_2lane enter! currefps:%d\n",currefps);
-		write_cmos_sensor(0x0100, 0x00); 
-		
-		write_cmos_sensor(0x3501, 0x5f); //long exposure
-		write_cmos_sensor(0x3502, 0xd0);  //long exposure
-		
-		write_cmos_sensor(0x3508, 0x03);  //gain
-		write_cmos_sensor(0x3509, 0x00);  //gain
-
-		write_cmos_sensor(0x3623, 0x00);  //gain
-		write_cmos_sensor(0x366e, 0x10); 
-		write_cmos_sensor(0x370b, 0x1b); 
-		write_cmos_sensor(0x3808, 0x0a); 
-		write_cmos_sensor(0x3809, 0x20); 
-		write_cmos_sensor(0x380a, 0x07); 
-		write_cmos_sensor(0x380b, 0x98); 
-		write_cmos_sensor(0x380c, 0x06); // hts 
-		write_cmos_sensor(0x380d, 0x8c); 	   // hts
-		write_cmos_sensor(0x380e, 0x07);  // vts 
-		write_cmos_sensor(0x380f, 0xfd);		 // vts 
-
-		
-		write_cmos_sensor(0x3814, 0x01); 
-		write_cmos_sensor(0x3820, 0x80); 
-		write_cmos_sensor(0x3821, 0x46); 
-		write_cmos_sensor(0x382a, 0x01);
-		
-		write_cmos_sensor(0x3845, 0x00);  //v_offset for auto size mode
-		
-		write_cmos_sensor(0x4009, 0x0d); 
-		write_cmos_sensor(0x4502, 0x40); 
-		write_cmos_sensor(0x4508, 0xaa); 
-		write_cmos_sensor(0x4509, 0xaa); 
-		write_cmos_sensor(0x450a, 0x00);  // 
-		write_cmos_sensor(0x4600, 0x01); 
-		write_cmos_sensor(0x4601, 0x03); 
-		write_cmos_sensor(0x4017, 0x08); //threshold= 2LSB for full size
-		write_cmos_sensor(0x400a, 0x02); //
-		write_cmos_sensor(0x400b, 0x00); //
-		
-		write_cmos_sensor(0x0100, 0x01);
-		
-	
-		
-}
-
-static void normal_video_setting(kal_uint16 currefps)
-{
-	LOG_INF("normal_video_setting Enter! currefps:%d\n",currefps);
-	
-		//@@PV_Quarter_size_30fps_800Mbps/lane_1296x972							  
-	//99 1296 972 															  
-	//;;102 3601	157c														  
-	//;;PCLK=HTS*VTS*fps=0x68c*0x7fd*30=1676*2045*30=102.85M					  
-																			  
-	write_cmos_sensor(0x0100, 0x00);  // 	
-	
-	write_cmos_sensor(0x3501, 0x73);  // 							  
-	write_cmos_sensor(0x3502, 0x00);  // 							  
-	write_cmos_sensor(0x3508, 0x01);  // 							  
-	write_cmos_sensor(0x3509, 0x80);  // 
-	write_cmos_sensor(0x3623, 0x00);  //gain
-	write_cmos_sensor(0x366e, 0x08);  // 							  
-	write_cmos_sensor(0x370b, 0x1b);  // 							  
-	write_cmos_sensor(0x3808, 0x05);  // 							  
-	write_cmos_sensor(0x3809, 0x10);  // 							  
-	write_cmos_sensor(0x380a, 0x03);  // 							  
-	write_cmos_sensor(0x380b, 0xcc);  //;c0							  
-	write_cmos_sensor(0x380c, ((imgsensor_info.normal_video.linelength >> 8) & 0xFF)); // hts
-	write_cmos_sensor(0x380d, (imgsensor_info.normal_video.linelength & 0xFF)); 	   // hts
-	write_cmos_sensor(0x380e, ((imgsensor_info.normal_video.framelength >> 8) & 0xFF));  // vts 
-	write_cmos_sensor(0x380f, (imgsensor_info.normal_video.framelength & 0xFF));		 // vts 						  
-	write_cmos_sensor(0x3814, 0x03);  // 							  
-	write_cmos_sensor(0x3820, 0x90);  // 							  
-	write_cmos_sensor(0x3821, 0x47);  // 							  
-	write_cmos_sensor(0x382a, 0x03);  // 							  
-	write_cmos_sensor(0x3845, 0x02);  // 							  
-	write_cmos_sensor(0x4009, 0x05);  // 							  
-	write_cmos_sensor(0x4502, 0x44);  // 							  
-	write_cmos_sensor(0x4508, 0x55);  // 							  
-	write_cmos_sensor(0x4509, 0x55);  // 
-	write_cmos_sensor(0x450a, 0x00);  // 
-	write_cmos_sensor(0x4600, 0x00);  // 							  
-	write_cmos_sensor(0x4601, 0x81);  // 							  
-	write_cmos_sensor(0x4017, 0x10);  //; threshold = 4LSB for Binning 
-	write_cmos_sensor(0x400a, 0x02);  //;							  
-	write_cmos_sensor(0x400b, 0x00);  //;	
-	
-	write_cmos_sensor(0x0100, 0x01);  // 	
-}
-
-	
-
-
-
-
-
-
-/*************************************************************************
-* FUNCTION
-*	get_imgsensor_id
-*
-* DESCRIPTION
-*	This function get the sensor ID 
-*
-* PARAMETERS
-*	*sensorID : return the sensor ID 
-*
-* RETURNS
-*	None
-*
-* GLOBALS AFFECTED
-*
-*************************************************************************/
-static kal_uint32 get_imgsensor_id(UINT32 *sensor_id) 
-{
-	kal_uint8 i = 0;
-	kal_uint8 retry = 5;
-	//sensor have two i2c address 0x6c 0x6d & 0x21 0x20, we should detect the module used i2c address
-	while (imgsensor_info.i2c_addr_table[i] != 0xff) {
-		spin_lock(&imgsensor_drv_lock);
-		imgsensor.i2c_write_id = imgsensor_info.i2c_addr_table[i];
-		spin_unlock(&imgsensor_drv_lock);
-		do {
-			*sensor_id = ((read_cmos_sensor(0x300B) << 8) | read_cmos_sensor(0x300C));
-			if (*sensor_id == imgsensor_info.sensor_id) {				
-				printk("alphaxiang i2c write id: 0x%x, sensor id: 0x%x\n", imgsensor.i2c_write_id,*sensor_id);	  
-				return ERROR_NONE;
-			}	
-			LOG_INF("Read sensor id fail, id: 0x%x\n", imgsensor.i2c_write_id,*sensor_id);
-			retry--;
-		} while(retry > 0);
-		i++;
-		retry = 2;
-	}
-	if (*sensor_id != imgsensor_info.sensor_id) {
-		// if Sensor ID is not correct, Must set *sensor_id to 0xFFFFFFFF 
-		*sensor_id = 0xFFFFFFFF;
-		return ERROR_SENSOR_CONNECT_FAIL;
-	}
-	return ERROR_NONE;
+	OV5670_write_cmos_sensor(0x0100, 0x01);  // 	
 }
 
 
-/*************************************************************************
-* FUNCTION
-*	open
-*
-* DESCRIPTION
-*	This function initialize the registers of CMOS sensor
-*
-* PARAMETERS
-*	None
-*
-* RETURNS
-*	None
-*
-* GLOBALS AFFECTED
-*
-*************************************************************************/
-static kal_uint32 open(void)
+void OV5670VideoSetting(void)
 {
-	//const kal_uint8 i2c_addr[] = {IMGSENSOR_WRITE_ID_1, IMGSENSOR_WRITE_ID_2};
-	kal_uint8 i = 0;
-	kal_uint8 retry = 2;
-	kal_uint16 sensor_id = 0; 
-	LOG_INF("preview 1280*960@30fps,864Mbps/lane; video 1280*960@30fps,864Mbps/lane; capture 5M@30fps,864Mbps/lane\n");
-	
-	//sensor have two i2c address 0x6c 0x6d & 0x21 0x20, we should detect the module used i2c address
-	while (imgsensor_info.i2c_addr_table[i] != 0xff) {
-		spin_lock(&imgsensor_drv_lock);
-		imgsensor.i2c_write_id = imgsensor_info.i2c_addr_table[i];
-		spin_unlock(&imgsensor_drv_lock);
-		do {
-			sensor_id = ((read_cmos_sensor(0x300B) << 8) | read_cmos_sensor(0x300C));
-			if (sensor_id == imgsensor_info.sensor_id) {				
-				LOG_INF("i2c write id: 0x%x, sensor id: 0x%x\n", imgsensor.i2c_write_id,sensor_id);	  
-				break;
-			}	
-			LOG_INF("Read sensor id fail, id: 0x%x\n", imgsensor.i2c_write_id,sensor_id);
-			retry--;
-		} while(retry > 0);
-		i++;
-		if (sensor_id == imgsensor_info.sensor_id)
-			break;
-		retry = 2;
-	}		 
-	if (imgsensor_info.sensor_id != sensor_id)
-		return ERROR_SENSOR_CONNECT_FAIL;
-	
-	/* initail sequence write in  */
-	sensor_init();
+	OV5670DB(" OV5670videoSetting_2lane enter:video/preview sync\n");
 
-	spin_lock(&imgsensor_drv_lock);
-
-	imgsensor.autoflicker_en= KAL_FALSE;
-	imgsensor.sensor_mode = IMGSENSOR_MODE_INIT;
-	imgsensor.shutter = 0x4C00;
-	imgsensor.gain = 0x0200;
-	imgsensor.pclk = imgsensor_info.pre.pclk;
-	imgsensor.frame_length = imgsensor_info.pre.framelength;
-	imgsensor.line_length = imgsensor_info.pre.linelength;
-	imgsensor.min_frame_length = imgsensor_info.pre.framelength;
-	imgsensor.dummy_pixel = 0;
-	imgsensor.dummy_line = 0;
-	imgsensor.ihdr_en = 0;
-	imgsensor.test_pattern = KAL_FALSE;
-	imgsensor.current_fps = imgsensor_info.pre.max_framerate;
-	spin_unlock(&imgsensor_drv_lock);
-
-	return ERROR_NONE;
-}	/*	open  */
+	OV5670PreviewSetting();
+}
 
 
 
-/*************************************************************************
-* FUNCTION
-*	close
-*
-* DESCRIPTION
-*	
-*
-* PARAMETERS
-*	None
-*
-* RETURNS
-*	None
-*
-* GLOBALS AFFECTED
-*
-*************************************************************************/
-static kal_uint32 close(void)
+void OV5670CaptureSetting(void)
 {
-	LOG_INF("E\n");
+	OV5670DB("OV5670CaptureSetting_2lane enter\n");
 
-	/*No Need to implement this function*/ 
+	OV5670_write_cmos_sensor(0x0100, 0x00); 
 	
-	return ERROR_NONE;
-}	/*	close  */
+	OV5670_write_cmos_sensor(0x3501, 0x5f); //long exposure
+	OV5670_write_cmos_sensor(0x3502, 0xd0);  //long exposure
+	
+	OV5670_write_cmos_sensor(0x3508, 0x03);  //gain
+	OV5670_write_cmos_sensor(0x3509, 0x00);  //gain
+	
+	OV5670_write_cmos_sensor(0x366e, 0x10); 
+	OV5670_write_cmos_sensor(0x370b, 0x1b); 
+	OV5670_write_cmos_sensor(0x3808, 0x0a); 
+	OV5670_write_cmos_sensor(0x3809, 0x20); 
+	OV5670_write_cmos_sensor(0x380a, 0x07); 
+	OV5670_write_cmos_sensor(0x380b, 0x98); 
+	OV5670_write_cmos_sensor(0x380c, 0x07); //;06
+	OV5670_write_cmos_sensor(0x380d, 0xdc); //;8c
+	OV5670_write_cmos_sensor(0x380e, 0x07); 
+	OV5670_write_cmos_sensor(0x380f, 0xfd); 
+	OV5670_write_cmos_sensor(0x3814, 0x01); 
+	OV5670_write_cmos_sensor(0x3820, 0x80); 
+	OV5670_write_cmos_sensor(0x3821, 0x46); 
+	OV5670_write_cmos_sensor(0x382a, 0x01);
+	
+	OV5670_write_cmos_sensor(0x3845, 0x00);  //v_offset for auto size mode
+	
+	OV5670_write_cmos_sensor(0x4009, 0x0d); 
+	OV5670_write_cmos_sensor(0x4502, 0x40); 
+	OV5670_write_cmos_sensor(0x4508, 0xaa); 
+	OV5670_write_cmos_sensor(0x4509, 0xaa); 
+	OV5670_write_cmos_sensor(0x4600, 0x01); 
+	OV5670_write_cmos_sensor(0x4601, 0x03); 
+	OV5670_write_cmos_sensor(0x4017, 0x08); //threshold= 2LSB for full size
+	OV5670_write_cmos_sensor(0x400a, 0x02); //
+	OV5670_write_cmos_sensor(0x400b, 0x00); //
+	
+	OV5670_write_cmos_sensor(0x0100, 0x01); 
+	
+}
 
 
-/*************************************************************************
-* FUNCTION
-* preview
-*
-* DESCRIPTION
-*	This function start the sensor preview.
-*
-* PARAMETERS
-*	*image_window : address pointer of pixel numbers in one period of HSYNC
-*  *sensor_config_data : address pointer of line numbers in one period of VSYNC
-*
-* RETURNS
-*	None
-*
-* GLOBALS AFFECTED
-*
-*************************************************************************/
-static kal_uint32 preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
-					  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
+static void OV5670_Sensor_Init(void)
 {
-	LOG_INF("E\n");
+	OV5670DB("OV5670_Sensor_Init_2lane enter\n");
+	
+	OV5670_write_cmos_sensor(0x0103,0x01);// ; software reset
+	mdelay(10);
+	OV5670_write_cmos_sensor(0x0100, 0x00);// ; software standby
+	OV5670_write_cmos_sensor(0x0100, 0x00); 
+	OV5670_write_cmos_sensor(0x0300, 0x04); 
+	OV5670_write_cmos_sensor(0x0301, 0x00); 
+	OV5670_write_cmos_sensor(0x0302, 0x64); //;78
+	OV5670_write_cmos_sensor(0x0303, 0x00); 
+	OV5670_write_cmos_sensor(0x0304, 0x03); 
+	OV5670_write_cmos_sensor(0x0305, 0x01); 
+	OV5670_write_cmos_sensor(0x0306, 0x01); 
+	OV5670_write_cmos_sensor(0x030a, 0x00); 
+	OV5670_write_cmos_sensor(0x030b, 0x00); 
+	OV5670_write_cmos_sensor(0x030c, 0x00); 
+	OV5670_write_cmos_sensor(0x030d, 0x1e); 
+	OV5670_write_cmos_sensor(0x030e, 0x00); 
+	OV5670_write_cmos_sensor(0x030f, 0x06); 
+	OV5670_write_cmos_sensor(0x0312, 0x01); 
+	OV5670_write_cmos_sensor(0x3000, 0x00); 
+	OV5670_write_cmos_sensor(0x3002, 0x21); 
+	OV5670_write_cmos_sensor(0x3005, 0xf0); 
+	OV5670_write_cmos_sensor(0x3007, 0x00); 
+	OV5670_write_cmos_sensor(0x3015, 0x0f); 
+	OV5670_write_cmos_sensor(0x3018, 0x32); 
+	OV5670_write_cmos_sensor(0x301a, 0xf0); 
+	OV5670_write_cmos_sensor(0x301b, 0xf0); 
+	OV5670_write_cmos_sensor(0x301c, 0xf0); 
+	OV5670_write_cmos_sensor(0x301d, 0xf0); 
+	OV5670_write_cmos_sensor(0x301e, 0xf0); 
+	OV5670_write_cmos_sensor(0x3030, 0x00); 
+	OV5670_write_cmos_sensor(0x3031, 0x0a); 
+	OV5670_write_cmos_sensor(0x303c, 0xff); 
+	OV5670_write_cmos_sensor(0x303e, 0xff); 
+	OV5670_write_cmos_sensor(0x3040, 0xf0); 
+	OV5670_write_cmos_sensor(0x3041, 0x00); 
+	OV5670_write_cmos_sensor(0x3042, 0xf0); 
+	OV5670_write_cmos_sensor(0x3106, 0x11); 
+	OV5670_write_cmos_sensor(0x3500, 0x00); 
+	OV5670_write_cmos_sensor(0x3501, 0x7b); 
+	OV5670_write_cmos_sensor(0x3502, 0x00); 
+	OV5670_write_cmos_sensor(0x3503, 0x04); 
+	OV5670_write_cmos_sensor(0x3504, 0x03); 
+	OV5670_write_cmos_sensor(0x3505, 0x83); 
+	OV5670_write_cmos_sensor(0x3508, 0x07); 
+	OV5670_write_cmos_sensor(0x3509, 0x80); 
+	OV5670_write_cmos_sensor(0x350e, 0x04); 
+	OV5670_write_cmos_sensor(0x350f, 0x00); 
+	OV5670_write_cmos_sensor(0x3510, 0x00); 
+	OV5670_write_cmos_sensor(0x3511, 0x02); 
+	OV5670_write_cmos_sensor(0x3512, 0x00); 
+	OV5670_write_cmos_sensor(0x3601, 0xc8); 
+	OV5670_write_cmos_sensor(0x3610, 0x88); 
+	OV5670_write_cmos_sensor(0x3612, 0x48); 
+	OV5670_write_cmos_sensor(0x3614, 0x5b); 
+	OV5670_write_cmos_sensor(0x3615, 0x96); 
+	OV5670_write_cmos_sensor(0x3621, 0xd0); 
+	OV5670_write_cmos_sensor(0x3622, 0x00); 
+	OV5670_write_cmos_sensor(0x3623, 0x00); 
+	OV5670_write_cmos_sensor(0x3633, 0x13); 
+	OV5670_write_cmos_sensor(0x3634, 0x13); 
+	OV5670_write_cmos_sensor(0x3635, 0x13); 
+	OV5670_write_cmos_sensor(0x3636, 0x13); 
+	OV5670_write_cmos_sensor(0x3645, 0x13); 
+	OV5670_write_cmos_sensor(0x3646, 0x82); 
+	OV5670_write_cmos_sensor(0x3650, 0x00); 
+	OV5670_write_cmos_sensor(0x3652, 0xff); 
+	OV5670_write_cmos_sensor(0x3655, 0x20); 
+	OV5670_write_cmos_sensor(0x3656, 0xff); 
+	OV5670_write_cmos_sensor(0x365a, 0xff); 
+	OV5670_write_cmos_sensor(0x365e, 0xff); 
+	OV5670_write_cmos_sensor(0x3668, 0x00); 
+	OV5670_write_cmos_sensor(0x366a, 0x07); 
+	OV5670_write_cmos_sensor(0x366e, 0x10); 
+	OV5670_write_cmos_sensor(0x366d, 0x00); 
+	OV5670_write_cmos_sensor(0x366f, 0x80); 
+	OV5670_write_cmos_sensor(0x3700, 0x28); 
+	OV5670_write_cmos_sensor(0x3701, 0x10); 
+	OV5670_write_cmos_sensor(0x3702, 0x3a); 
+	OV5670_write_cmos_sensor(0x3703, 0x19); 
+	OV5670_write_cmos_sensor(0x3704, 0x10);
+	OV5670_write_cmos_sensor(0x3705, 0x00); 
+	OV5670_write_cmos_sensor(0x3706, 0x66); 
+	OV5670_write_cmos_sensor(0x3707, 0x08); 
+	OV5670_write_cmos_sensor(0x3708, 0x34); 
+	OV5670_write_cmos_sensor(0x3709, 0x40); 
+	OV5670_write_cmos_sensor(0x370a, 0x01); 
+	OV5670_write_cmos_sensor(0x370b, 0x1b); 
+	OV5670_write_cmos_sensor(0x3714, 0x24); 
+	OV5670_write_cmos_sensor(0x371a, 0x3e); 
+	OV5670_write_cmos_sensor(0x3733, 0x00); 
+	OV5670_write_cmos_sensor(0x3734, 0x00); 
+	OV5670_write_cmos_sensor(0x373a, 0x05); 
+	OV5670_write_cmos_sensor(0x373b, 0x06); 
+	OV5670_write_cmos_sensor(0x373c, 0x0a); 
+	OV5670_write_cmos_sensor(0x373f, 0xa0); 
+	OV5670_write_cmos_sensor(0x3755, 0x00); 
+	OV5670_write_cmos_sensor(0x3758, 0x00); 
+	OV5670_write_cmos_sensor(0x375b, 0x0e);
+	OV5670_write_cmos_sensor(0x3766, 0x5f); 
+	OV5670_write_cmos_sensor(0x3768, 0x00); 
+	OV5670_write_cmos_sensor(0x3769, 0x22); 
+	OV5670_write_cmos_sensor(0x3773, 0x08); 
+	OV5670_write_cmos_sensor(0x3774, 0x1f); 
+	OV5670_write_cmos_sensor(0x3776, 0x06); 
+	OV5670_write_cmos_sensor(0x37a0, 0x88); 
+	OV5670_write_cmos_sensor(0x37a1, 0x5c); 
+	OV5670_write_cmos_sensor(0x37a7, 0x88); 
+	OV5670_write_cmos_sensor(0x37a8, 0x70); 
+	OV5670_write_cmos_sensor(0x37aa, 0x88); 
+	OV5670_write_cmos_sensor(0x37ab, 0x48); 
+	OV5670_write_cmos_sensor(0x37b3, 0x66); 
+	OV5670_write_cmos_sensor(0x37c2, 0x04); 
+	OV5670_write_cmos_sensor(0x37c5, 0x00); 
+	OV5670_write_cmos_sensor(0x37c8, 0x00); 
+	OV5670_write_cmos_sensor(0x3800, 0x00); 
+	OV5670_write_cmos_sensor(0x3801, 0x0c); 
+	OV5670_write_cmos_sensor(0x3802, 0x00); 
+	OV5670_write_cmos_sensor(0x3803, 0x04); 
+	OV5670_write_cmos_sensor(0x3804, 0x0a); 
+	OV5670_write_cmos_sensor(0x3805, 0x33); 
+	OV5670_write_cmos_sensor(0x3806, 0x07); 
+	OV5670_write_cmos_sensor(0x3807, 0xa3); 
+	OV5670_write_cmos_sensor(0x3808, 0x0a); 
+	OV5670_write_cmos_sensor(0x3809, 0x20); 
+	OV5670_write_cmos_sensor(0x380a, 0x07); 
+	OV5670_write_cmos_sensor(0x380b, 0x98); 
+	OV5670_write_cmos_sensor(0x380c, 0x07); // ;06
+	OV5670_write_cmos_sensor(0x380d, 0xdc); // ;8c
+	OV5670_write_cmos_sensor(0x380e, 0x07); 
+	OV5670_write_cmos_sensor(0x380f, 0xb8); 
+	OV5670_write_cmos_sensor(0x3811, 0x04); 
+	OV5670_write_cmos_sensor(0x3813, 0x02); 
+	OV5670_write_cmos_sensor(0x3814, 0x01); 
+	OV5670_write_cmos_sensor(0x3815, 0x01); 
+	OV5670_write_cmos_sensor(0x3816, 0x00); 
+	OV5670_write_cmos_sensor(0x3817, 0x00); 
+	OV5670_write_cmos_sensor(0x3818, 0x00); 
+	OV5670_write_cmos_sensor(0x3819, 0x00); 
+	OV5670_write_cmos_sensor(0x3820, 0x80); 
+	OV5670_write_cmos_sensor(0x3821, 0x46); 
+	OV5670_write_cmos_sensor(0x3822, 0x48); 
+	OV5670_write_cmos_sensor(0x3826, 0x00); 
+	OV5670_write_cmos_sensor(0x3827, 0x08); 
+	OV5670_write_cmos_sensor(0x382a, 0x01); 
+	OV5670_write_cmos_sensor(0x382b, 0x01); 
+	OV5670_write_cmos_sensor(0x3830, 0x08); 
+	OV5670_write_cmos_sensor(0x3836, 0x02); 
+	OV5670_write_cmos_sensor(0x3837, 0x00); 
+	OV5670_write_cmos_sensor(0x3838, 0x10); 
+	OV5670_write_cmos_sensor(0x3841, 0xff); 
+	OV5670_write_cmos_sensor(0x3846, 0x48); 
+	OV5670_write_cmos_sensor(0x3861, 0x00); 
+	OV5670_write_cmos_sensor(0x3862, 0x04);//x00); 
+	OV5670_write_cmos_sensor(0x3863, 0x06);//0x18); 
+	OV5670_write_cmos_sensor(0x3a11, 0x01); 
+	OV5670_write_cmos_sensor(0x3a12, 0x78); 
+	OV5670_write_cmos_sensor(0x3b00, 0x00); 
+	OV5670_write_cmos_sensor(0x3b02, 0x00); 
+	OV5670_write_cmos_sensor(0x3b03, 0x00); 
+	OV5670_write_cmos_sensor(0x3b04, 0x00); 
+	OV5670_write_cmos_sensor(0x3b05, 0x00); 
+	OV5670_write_cmos_sensor(0x3c00, 0x89); 
+	OV5670_write_cmos_sensor(0x3c01, 0xab); 
+	OV5670_write_cmos_sensor(0x3c02, 0x01); 
+	OV5670_write_cmos_sensor(0x3c03, 0x00); 
+	OV5670_write_cmos_sensor(0x3c04, 0x00); 
+	OV5670_write_cmos_sensor(0x3c05, 0x03); 
+	OV5670_write_cmos_sensor(0x3c06, 0x00); 
+	OV5670_write_cmos_sensor(0x3c07, 0x05); 
+	OV5670_write_cmos_sensor(0x3c0c, 0x00); 
+	OV5670_write_cmos_sensor(0x3c0d, 0x00); 
+	OV5670_write_cmos_sensor(0x3c0e, 0x00); 
+	OV5670_write_cmos_sensor(0x3c0f, 0x00); 
+	OV5670_write_cmos_sensor(0x3c40, 0x00); 
+	OV5670_write_cmos_sensor(0x3c41, 0xa3); 
+	OV5670_write_cmos_sensor(0x3c43, 0x7d); 
+	OV5670_write_cmos_sensor(0x3c45, 0xd7); 
+	OV5670_write_cmos_sensor(0x3c47, 0xfc); 
+	OV5670_write_cmos_sensor(0x3c50, 0x05); 
+	OV5670_write_cmos_sensor(0x3c52, 0xaa); 
+	OV5670_write_cmos_sensor(0x3c54, 0x71); 
+	OV5670_write_cmos_sensor(0x3c56, 0x80); 
+	OV5670_write_cmos_sensor(0x3d85, 0x17); 
+	OV5670_write_cmos_sensor(0x3f03, 0x00); 
+	OV5670_write_cmos_sensor(0x3f0a, 0x00); 
+	OV5670_write_cmos_sensor(0x3f0b, 0x00); 
+	OV5670_write_cmos_sensor(0x4001, 0x60); 
+	OV5670_write_cmos_sensor(0x4009, 0x0d); 
+	OV5670_write_cmos_sensor(0x4020, 0x00); 
+	OV5670_write_cmos_sensor(0x4021, 0x00); 
+	OV5670_write_cmos_sensor(0x4022, 0x00); 
+	OV5670_write_cmos_sensor(0x4023, 0x00); 
+	OV5670_write_cmos_sensor(0x4024, 0x00); 
+	OV5670_write_cmos_sensor(0x4025, 0x00); 
+	OV5670_write_cmos_sensor(0x4026, 0x00); 
+	OV5670_write_cmos_sensor(0x4027, 0x00); 
+	OV5670_write_cmos_sensor(0x4028, 0x00); 
+	OV5670_write_cmos_sensor(0x4029, 0x00); 
+	OV5670_write_cmos_sensor(0x402a, 0x00); 
+	OV5670_write_cmos_sensor(0x402b, 0x00); 
+	OV5670_write_cmos_sensor(0x402c, 0x00); 
+	OV5670_write_cmos_sensor(0x402d, 0x00); 
+	OV5670_write_cmos_sensor(0x402e, 0x00); 
+	OV5670_write_cmos_sensor(0x402f, 0x00); 
+	OV5670_write_cmos_sensor(0x4040, 0x00); 
+	OV5670_write_cmos_sensor(0x4041, 0x03);//0x00); 
+	OV5670_write_cmos_sensor(0x4042, 0x00); 
+	OV5670_write_cmos_sensor(0x4043, 0x7a);//0x80); 
+	OV5670_write_cmos_sensor(0x4044, 0x00); 
+	OV5670_write_cmos_sensor(0x4045, 0x7a);//0x80); 
+	OV5670_write_cmos_sensor(0x4046, 0x00); 
+	OV5670_write_cmos_sensor(0x4047, 0x7a);//0x80); 
+	OV5670_write_cmos_sensor(0x4048, 0x00); 
+	OV5670_write_cmos_sensor(0x4049, 0x7a);//0x80); 
+	OV5670_write_cmos_sensor(0x4303, 0x00); 
+	OV5670_write_cmos_sensor(0x4307, 0x30); 
+	OV5670_write_cmos_sensor(0x4500, 0x58); 
+	OV5670_write_cmos_sensor(0x4501, 0x04); 
+	OV5670_write_cmos_sensor(0x4502, 0x40); 
+	OV5670_write_cmos_sensor(0x4503, 0x10); 
+	OV5670_write_cmos_sensor(0x4508, 0xaa); 
+	OV5670_write_cmos_sensor(0x4509, 0xaa); 
+	OV5670_write_cmos_sensor(0x450a, 0x00); 
+	OV5670_write_cmos_sensor(0x450b, 0x00); 
+	OV5670_write_cmos_sensor(0x4600, 0x01); 
+	OV5670_write_cmos_sensor(0x4601, 0x03); 
+	OV5670_write_cmos_sensor(0x4700, 0xa4); 
+	OV5670_write_cmos_sensor(0x4800, 0x4c); 
+	OV5670_write_cmos_sensor(0x4816, 0x53); 
+	OV5670_write_cmos_sensor(0x481f, 0x40); 
+	OV5670_write_cmos_sensor(0x4837, 0x14); // ;11
+	OV5670_write_cmos_sensor(0x5000, 0x56);//0x16); 
+	OV5670_write_cmos_sensor(0x5001, 0x01); 
+	OV5670_write_cmos_sensor(0x5002, 0x28);//0xa8); 
+	OV5670_write_cmos_sensor(0x5004, 0x0c); 
+	OV5670_write_cmos_sensor(0x5006, 0x0c); 
+	OV5670_write_cmos_sensor(0x5007, 0xe0); 
+	OV5670_write_cmos_sensor(0x5008, 0x01); 
+	OV5670_write_cmos_sensor(0x5009, 0xb0); 
+	OV5670_write_cmos_sensor(0x5901, 0x00); 
+	OV5670_write_cmos_sensor(0x5a01, 0x00); 
+	OV5670_write_cmos_sensor(0x5a03, 0x00); 
+	OV5670_write_cmos_sensor(0x5a04, 0x0c); 
+	OV5670_write_cmos_sensor(0x5a05, 0xe0); 
+	OV5670_write_cmos_sensor(0x5a06, 0x09); 
+	OV5670_write_cmos_sensor(0x5a07, 0xb0); 
+	OV5670_write_cmos_sensor(0x5a08, 0x06); 
+	OV5670_write_cmos_sensor(0x5e00, 0x00); 
+	//for BLC
+	OV5670_write_cmos_sensor(0x3734, 0x40); 
+	OV5670_write_cmos_sensor(0x5b00, 0x01); 
+	OV5670_write_cmos_sensor(0x5b01, 0x10); 
+	OV5670_write_cmos_sensor(0x5b02, 0x01); 
+	OV5670_write_cmos_sensor(0x5b03, 0xdb); 
+	OV5670_write_cmos_sensor(0x3d8c, 0x71);
+	OV5670_write_cmos_sensor(0x3d8d, 0xea);
+	OV5670_write_cmos_sensor(0x4017, 0x08);
+	
+	OV5670_write_cmos_sensor(0x3618, 0x2a); 
+								   
+	//;Ally031414					  
+	OV5670_write_cmos_sensor(0x3734, 0x40); //	;; Improve HFPN
+	OV5670_write_cmos_sensor(0x5b00, 0x01);  // ;; [2:0] otp start addr[10:8]
+	OV5670_write_cmos_sensor(0x5b01, 0x10);  // ;; [7:0] otp start addr[7:0]
+	OV5670_write_cmos_sensor(0x5b02, 0x01);  // ;; [2:0] otp end addr[10:8]
+	OV5670_write_cmos_sensor(0x5b03, 0xDB);  // ;; [7:0] otp end addr[7:0]
+	OV5670_write_cmos_sensor(0x3d8c, 0x71); //; Header address high byte
+	OV5670_write_cmos_sensor(0x3d8d, 0xEA); //; Header address low byte
+	OV5670_write_cmos_sensor(0x4017, 0x08); // ; threshold= 2LSB for full size
+								  
+	//;Strong DPC1.53				 
+	OV5670_write_cmos_sensor(0x5780, 0x3e); 
+	OV5670_write_cmos_sensor(0x5781, 0x0f); 
+	OV5670_write_cmos_sensor(0x5782, 0x44); 
+	OV5670_write_cmos_sensor(0x5783, 0x02); 
+	OV5670_write_cmos_sensor(0x5784, 0x01); 
+	OV5670_write_cmos_sensor(0x5785, 0x00); 
+	OV5670_write_cmos_sensor(0x5786, 0x00); 
+	OV5670_write_cmos_sensor(0x5787, 0x04); 
+	OV5670_write_cmos_sensor(0x5788, 0x02); 
+	OV5670_write_cmos_sensor(0x5789, 0x0f); 
+	OV5670_write_cmos_sensor(0x578a, 0xfd); 
+	OV5670_write_cmos_sensor(0x578b, 0xf5); 
+	OV5670_write_cmos_sensor(0x578c, 0xf5); 
+	OV5670_write_cmos_sensor(0x578d, 0x03); 
+	OV5670_write_cmos_sensor(0x578e, 0x08); 
+	OV5670_write_cmos_sensor(0x578f, 0x0c); 
+	OV5670_write_cmos_sensor(0x5790, 0x08); 
+	OV5670_write_cmos_sensor(0x5791, 0x04); 
+	OV5670_write_cmos_sensor(0x5792, 0x00); 
+	OV5670_write_cmos_sensor(0x5793, 0x52); 
+	OV5670_write_cmos_sensor(0x5794, 0xa3); 
+	//;Ping 					  
+	OV5670_write_cmos_sensor(0x380e, 0x07); //; fps fine adjustment
+	OV5670_write_cmos_sensor(0x380f, 0xfd); //; fps fine adjustment
+	OV5670_write_cmos_sensor(0x3503, 0x00); //; real gain [2]   gain no delay, shutter no delay
+	//;added					 
+	OV5670_write_cmos_sensor(0x3d85, 0x17); 
+	OV5670_write_cmos_sensor(0x3655, 0x20); 
+								   
+	OV5670_write_cmos_sensor(0x0100, 0x01); //;01
 
-	spin_lock(&imgsensor_drv_lock);
-	imgsensor.sensor_mode = IMGSENSOR_MODE_PREVIEW;
-	imgsensor.pclk = imgsensor_info.pre.pclk;
-	//imgsensor.video_mode = KAL_FALSE;
-	imgsensor.line_length = imgsensor_info.pre.linelength;
-	imgsensor.frame_length = imgsensor_info.pre.framelength; 
-	imgsensor.min_frame_length = imgsensor_info.pre.framelength;
-	imgsensor.autoflicker_en = KAL_FALSE;
-	spin_unlock(&imgsensor_drv_lock);
-	preview_setting();
-	return ERROR_NONE;
-}	/*	preview   */
+  ov5670_otp_config();
+}
 
-/*************************************************************************
-* FUNCTION
-*	capture
-*
-* DESCRIPTION
-*	This function setup the CMOS sensor in capture MY_OUTPUT mode
-*
-* PARAMETERS
-*
-* RETURNS
-*	None
-*
-* GLOBALS AFFECTED
-*
-*************************************************************************/
-static kal_uint32 capture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
-						  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
+
+UINT32 OV5670Open(void)
 {
-	LOG_INF("E\n");
-	spin_lock(&imgsensor_drv_lock);
-	imgsensor.sensor_mode = IMGSENSOR_MODE_CAPTURE;
-	imgsensor.current_fps = 300;
-		imgsensor.pclk = imgsensor_info.cap.pclk;
-		imgsensor.line_length = imgsensor_info.cap.linelength;
-		imgsensor.frame_length = imgsensor_info.cap.framelength;  
-		imgsensor.min_frame_length = imgsensor_info.cap.framelength;
-		imgsensor.current_fps = imgsensor_info.cap.max_framerate;
-		imgsensor.autoflicker_en = KAL_FALSE;
 
-	spin_unlock(&imgsensor_drv_lock);
+	volatile signed int i;
+	kal_uint16 sensor_id = 0;
 
-	capture_setting(imgsensor.current_fps); 
-	
-	
-	return ERROR_NONE;
-}	/* capture() */
-static kal_uint32 normal_video(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
-					  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
-{
-	LOG_INF("E\n");
-	
-	spin_lock(&imgsensor_drv_lock);
-	imgsensor.sensor_mode = IMGSENSOR_MODE_VIDEO;
-	imgsensor.pclk = imgsensor_info.normal_video.pclk;
-	imgsensor.line_length = imgsensor_info.normal_video.linelength;
-	imgsensor.frame_length = imgsensor_info.normal_video.framelength;  
-	imgsensor.min_frame_length = imgsensor_info.normal_video.framelength;
-	//imgsensor.current_fps = 300;
-	imgsensor.autoflicker_en = KAL_FALSE;
-	spin_unlock(&imgsensor_drv_lock);
-	normal_video_setting(imgsensor.current_fps);
-	
-	
-	return ERROR_NONE;
-}	/*	normal_video   */
+	OV5670DB("OV5670 Open enter :\n ");
+	OV5670_write_cmos_sensor(0x0103,0x01);// Reset sensor
+  mdelay(2);
 
-
-
-
-static kal_uint32 get_resolution(MSDK_SENSOR_RESOLUTION_INFO_STRUCT *sensor_resolution)
-{
-	LOG_INF("E\n");
-	sensor_resolution->SensorFullWidth = imgsensor_info.cap.grabwindow_width;
-	sensor_resolution->SensorFullHeight = imgsensor_info.cap.grabwindow_height;
-	
-	sensor_resolution->SensorPreviewWidth = imgsensor_info.pre.grabwindow_width;
-	sensor_resolution->SensorPreviewHeight = imgsensor_info.pre.grabwindow_height;
-
-	sensor_resolution->SensorVideoWidth = imgsensor_info.normal_video.grabwindow_width;
-	sensor_resolution->SensorVideoHeight = imgsensor_info.normal_video.grabwindow_height;		
-
-	
-	return ERROR_NONE;
-}	/*	get_resolution	*/
-
-static kal_uint32 get_info(MSDK_SCENARIO_ID_ENUM scenario_id,
-					  MSDK_SENSOR_INFO_STRUCT *sensor_info,
-					  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
-{
-	LOG_INF("scenario_id = %d\n", scenario_id);
-
-	
-	//sensor_info->SensorVideoFrameRate = imgsensor_info.normal_video.max_framerate/10; /* not use */
-	//sensor_info->SensorStillCaptureFrameRate= imgsensor_info.cap.max_framerate/10; /* not use */
-    //imgsensor_info->SensorWebCamCaptureFrameRate= imgsensor_info.v.max_framerate; /* not use */
-
-    sensor_info->SensorClockPolarity = SENSOR_CLOCK_POLARITY_LOW;
-    sensor_info->SensorClockFallingPolarity = SENSOR_CLOCK_POLARITY_LOW; /* not use */
-    sensor_info->SensorHsyncPolarity = SENSOR_CLOCK_POLARITY_LOW; // inverse with datasheet
-    sensor_info->SensorVsyncPolarity = SENSOR_CLOCK_POLARITY_LOW;
-    sensor_info->SensorInterruptDelayLines = 4; /* not use */
-    sensor_info->SensorResetActiveHigh = FALSE; /* not use */
-    sensor_info->SensorResetDelayCount = 5; /* not use */
-
-    sensor_info->SensroInterfaceType = imgsensor_info.sensor_interface_type;
-
-	sensor_info->SensorOutputDataFormat = imgsensor_info.sensor_output_dataformat;
-	sensor_info->CaptureDelayFrame = imgsensor_info.cap_delay_frame; 
-	sensor_info->PreviewDelayFrame = imgsensor_info.pre_delay_frame; 
-	sensor_info->VideoDelayFrame = imgsensor_info.video_delay_frame;
-
-	sensor_info->SensorMasterClockSwitch = 0; /* not use */
-	sensor_info->SensorDrivingCurrent = imgsensor_info.isp_driving_current;
-	
-	sensor_info->AEShutDelayFrame = imgsensor_info.ae_shut_delay_frame; 		 /* The frame of setting shutter default 0 for TG int */
-	sensor_info->AESensorGainDelayFrame = imgsensor_info.ae_sensor_gain_delay_frame;	/* The frame of setting sensor gain */
-	sensor_info->AEISPGainDelayFrame = imgsensor_info.ae_ispGain_delay_frame;	
-	
-	sensor_info->SensorMIPILaneNumber = imgsensor_info.mipi_lane_num; 
-	sensor_info->SensorClockFreq = imgsensor_info.mclk;
-	sensor_info->SensorClockDividCount = 3; /* not use */
-	sensor_info->SensorClockRisingCount = 0;
-	sensor_info->SensorClockFallingCount = 2; /* not use */
-	sensor_info->SensorPixelClockCount = 3; /* not use */
-	sensor_info->SensorDataLatchCount = 2; /* not use */
-	
-	sensor_info->MIPIDataLowPwr2HighSpeedTermDelayCount = 0; 
-	sensor_info->MIPICLKLowPwr2HighSpeedTermDelayCount = 0;
-	sensor_info->SensorWidthSampling = 0;  // 0 is default 1x
-	sensor_info->SensorHightSampling = 0;	// 0 is default 1x 
-	sensor_info->SensorPacketECCOrder = 1;
-
-	switch (scenario_id) {
-		case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
-			sensor_info->SensorGrabStartX = imgsensor_info.pre.startx; 
-			sensor_info->SensorGrabStartY = imgsensor_info.pre.starty;		
-			
-			sensor_info->MIPIDataLowPwr2HighSpeedSettleDelayCount = imgsensor_info.pre.mipi_data_lp2hs_settle_dc;
-			
-			break;
-		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
-			case MSDK_SCENARIO_ID_CAMERA_ZSD:
-			sensor_info->SensorGrabStartX = imgsensor_info.cap.startx; 
-			sensor_info->SensorGrabStartY = imgsensor_info.cap.starty;
-				  
-			sensor_info->MIPIDataLowPwr2HighSpeedSettleDelayCount = imgsensor_info.cap.mipi_data_lp2hs_settle_dc; 
-
-			break;	 
-		case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
-			
-			sensor_info->SensorGrabStartX = imgsensor_info.normal_video.startx; 
-			sensor_info->SensorGrabStartY = imgsensor_info.normal_video.starty;
-	   
-			sensor_info->MIPIDataLowPwr2HighSpeedSettleDelayCount = imgsensor_info.normal_video.mipi_data_lp2hs_settle_dc; 
-			break;
-		default:			
-			sensor_info->SensorGrabStartX = imgsensor_info.pre.startx; 
-			sensor_info->SensorGrabStartY = imgsensor_info.pre.starty;		
-			
-			sensor_info->MIPIDataLowPwr2HighSpeedSettleDelayCount = imgsensor_info.pre.mipi_data_lp2hs_settle_dc;
-			break;
-	}
-	
-	return ERROR_NONE;
-}	/*	get_info  */
-
-
-static kal_uint32 control(MSDK_SCENARIO_ID_ENUM scenario_id, MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
-					  MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
-{
-	LOG_INF("scenario_id = %d\n", scenario_id);
-	spin_lock(&imgsensor_drv_lock);
-	imgsensor.current_scenario_id = scenario_id;
-	spin_unlock(&imgsensor_drv_lock);
-	switch (scenario_id) {
-		case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
-			preview(image_window, sensor_config_data);
-			break;
-		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
-			case MSDK_SCENARIO_ID_CAMERA_ZSD:
-			capture(image_window, sensor_config_data);
-			break;	
-		case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
-			normal_video(image_window, sensor_config_data);
-			break;	  
-		default:
-			LOG_INF("Error ScenarioId setting");
-			preview(image_window, sensor_config_data);
-			return ERROR_INVALID_SCENARIO_ID;
-	}
-	return ERROR_NONE;
-}	/* control() */
-
-
-
-static kal_uint32 set_video_mode(UINT16 framerate)
-{
-	LOG_INF("framerate = %d\n ", framerate);
-	// SetVideoMode Function should fix framerate
-	if (framerate == 0)
-		// Dynamic frame rate
-		return ERROR_NONE;
-	spin_lock(&imgsensor_drv_lock);
-	if ((framerate == 30) && (imgsensor.autoflicker_en == KAL_TRUE))
+	for(i=0;i<2;i++)
 	{
-		imgsensor.current_fps = 296;
-		}
-	else if ((framerate == 15) && (imgsensor.autoflicker_en == KAL_TRUE))
+		sensor_id = (OV5670_read_cmos_sensor(0x300B)<<8)|OV5670_read_cmos_sensor(0x300C);
+		OV5670DB("OV5670 READ ID :%x",sensor_id);
+		if(sensor_id != OV5670MIPI_SENSOR_ID)
+		{
+			return ERROR_SENSOR_CONNECT_FAIL;
+		}else
+			break;
+	}
+	
+	OV5670_Sensor_Init();
+  OV5670_Init_Para();
+	OV5670DB("OV5670Open exit :\n ");
+
+ return ERROR_NONE;
+}
+
+void OV5670GetModuleID(void)
+{
+	struct otp_struct otp_info ; 
+	
+	OV5670_write_cmos_sensor(0x0100, 0x01); //stream on
+	read_otp(&otp_info);
+	OV5670_write_cmos_sensor(0x0100, 0x00); //stream off
+}
+
+UINT32 OV5670GetSensorID(UINT32 *sensorID)
+{
+    int  retry = 2;
+
+	OV5670DB("OV5670GetSensorID enter :\n ");
+    mdelay(5);
+
+    do {
+        *sensorID = (OV5670_read_cmos_sensor(0x300B)<<8)|OV5670_read_cmos_sensor(0x300C);
+        if (*sensorID == OV5670MIPI_SENSOR_ID)
 	{
-		imgsensor.current_fps = 146;
-		}
+		OV5670DB("Sensor ID = 0x%04x\n", *sensorID);
+		OV5670GetModuleID();
+		break;
+	}
+	OV5670DB("Read Sensor ID Fail = 0x%04x\n", *sensorID);
+        retry--;
+    } while (retry > 0);
+
+    if (*sensorID != OV5670MIPI_SENSOR_ID) {
+		OV5670DB("Read Sensor ID Fail = 0x%04x\n", *sensorID);
+
+		*sensorID = 0xFFFFFFFF;
+		return ERROR_SENSOR_CONNECT_FAIL;
+    } else {
+    		OV5670DB("alexadd %s module_id=%d", __func__, module_id);
+		if (module_id == 0x0c ||module_id != 0x44) return ERROR_NONE;
+    }
+
+    *sensorID = 0xFFFFFFFF;
+    return ERROR_SENSOR_CONNECT_FAIL;
+}
+
+
+void OV5670_SetShutter(kal_uint32 iShutter)
+{
+
+   spin_lock(&ov5670mipiraw_drv_lock);
+   OV5670.shutter= iShutter;
+   spin_unlock(&ov5670mipiraw_drv_lock);
+
+   OV5670_write_shutter(iShutter);
+   return;
+}
+
+
+
+UINT32 OV5670_read_shutter(void)
+{
+
+	kal_uint16 temp_reg1, temp_reg2 ,temp_reg3;
+	UINT32 shutter =0;
+	temp_reg1 = OV5670_read_cmos_sensor(0x3500);    // AEC[b19~b16]
+	temp_reg2 = OV5670_read_cmos_sensor(0x3501);    // AEC[b15~b8]
+	temp_reg3 = OV5670_read_cmos_sensor(0x3502);    // AEC[b7~b0]
+	
+	shutter  = (temp_reg1 <<12)| (temp_reg2<<4)|(temp_reg3>>4);
+
+	return shutter;
+}
+
+void OV5670_NightMode(kal_bool bEnable)
+{
+
+}
+
+UINT32 OV5670Close(void)
+{
+
+    return ERROR_NONE;
+}
+
+#if 0
+void OV5670SetFlipMirror(kal_int32 imgMirror)
+{
+	kal_int16 mirror=0,flip=0;
+	mirror= OV5670_read_cmos_sensor(0x3820);
+	flip  = OV5670_read_cmos_sensor(0x3821);
+
+    switch (imgMirror)
+    {
+        case IMAGE_H_MIRROR://IMAGE_NORMAL:
+            OV5670_write_cmos_sensor(0x3820, (mirror & (0xF9)));//Set normal
+            OV5670_write_cmos_sensor(0x3821, (flip & (0xF9)));	//Set normal
+            break;
+        case IMAGE_NORMAL://IMAGE_V_MIRROR:
+            OV5670_write_cmos_sensor(0x3820, (mirror & (0xF9)));//Set flip
+            OV5670_write_cmos_sensor(0x3821, (flip | (0x06)));	//Set flip
+            break;
+        case IMAGE_HV_MIRROR://IMAGE_H_MIRROR:
+            OV5670_write_cmos_sensor(0x3820, (mirror |(0x06)));	//Set mirror
+            OV5670_write_cmos_sensor(0x3821, (flip & (0xF9)));	//Set mirror
+            break;
+        case IMAGE_V_MIRROR://IMAGE_HV_MIRROR:
+            OV5670_write_cmos_sensor(0x3820, (mirror |(0x06)));	//Set mirror & flip
+            OV5670_write_cmos_sensor(0x3821, (flip |(0x06)));	//Set mirror & flip
+            break;
+    }
+}
+#endif
+
+
+UINT32 OV5670Preview(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
+                                                MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
+{
+
+	OV5670DB("OV5670Preview enter:");
+
+	//OV5670PreviewSetting();
+	OV5670CaptureSetting();
+	spin_lock(&ov5670mipiraw_drv_lock);
+	OV5670.sensorMode = SENSOR_MODE_PREVIEW; 
+	OV5670.DummyPixels = 0;
+	OV5670.DummyLines = 0 ;
+	OV5670_FeatureControl_PERIOD_PixelNum=OV5670_PV_PERIOD_PIXEL_NUMS+ OV5670.DummyPixels;
+	OV5670_FeatureControl_PERIOD_LineNum=OV5670_PV_PERIOD_LINE_NUMS+OV5670.DummyLines;
+	OV5670.imgMirror = sensor_config_data->SensorImageMirror;
+	spin_unlock(&ov5670mipiraw_drv_lock);
+	
+	//OV5670SetFlipMirror(sensor_config_data->SensorImageMirror);
+
+    mdelay(20);//THIS DELAY SHOULD BE NEED BY CTS OR MONKEY
+	OV5670DB("OV5670Preview exit:\n");
+
+	  
+    return ERROR_NONE;
+}
+
+
+UINT32 OV5670Video(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
+                                                MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
+{
+
+	OV5670DB("OV5670Video enter:");
+
+	OV5670VideoSetting();
+
+	spin_lock(&ov5670mipiraw_drv_lock);
+	OV5670.sensorMode = SENSOR_MODE_VIDEO;
+	OV5670_FeatureControl_PERIOD_PixelNum=OV5670_VIDEO_PERIOD_PIXEL_NUMS+ OV5670.DummyPixels;
+	OV5670_FeatureControl_PERIOD_LineNum=OV5670_VIDEO_PERIOD_LINE_NUMS+OV5670.DummyLines;
+	OV5670.imgMirror = sensor_config_data->SensorImageMirror;
+	spin_unlock(&ov5670mipiraw_drv_lock);
+	
+	//OV5670SetFlipMirror(sensor_config_data->SensorImageMirror);
+
+    mdelay(40);//THIS DELAY SHOULD BE NEED BY CTS OR MONKEY
+	OV5670DB("OV5670Video exit:\n");
+    return ERROR_NONE;
+}
+
+
+UINT32 OV5670Capture(MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *image_window,
+                                                MSDK_SENSOR_CONFIG_STRUCT *sensor_config_data)
+{
+
+ 	//kal_uint32 shutter = OV5670.shutter;
+
+	if( SENSOR_MODE_CAPTURE== OV5670.sensorMode)
+	{
+		OV5670DB("OV5670Capture BusrtShot / ZSD!!!\n");
+	}
 	else
 	{
-		imgsensor.current_fps = framerate*10;
+		OV5670DB("OV5670Capture enter:\n");
+
+		OV5670CaptureSetting();
+	    mdelay(40);//THIS DELAY SHOULD BE NEED BY CTS OR MONKEY
+
+		spin_lock(&ov5670mipiraw_drv_lock);
+		OV5670.sensorMode = SENSOR_MODE_CAPTURE;
+		OV5670.imgMirror = sensor_config_data->SensorImageMirror;
+		OV5670.DummyPixels = 0;
+		OV5670.DummyLines = 0 ;
+		OV5670_FeatureControl_PERIOD_PixelNum = OV5670_FULL_PERIOD_PIXEL_NUMS + OV5670.DummyPixels;
+		OV5670_FeatureControl_PERIOD_LineNum = OV5670_FULL_PERIOD_LINE_NUMS + OV5670.DummyLines;
+		spin_unlock(&ov5670mipiraw_drv_lock);
+
+		//OV5670SetFlipMirror(sensor_config_data->SensorImageMirror);
+
+		OV5670DB("OV5670Capture exit:\n");
 	}
-	spin_unlock(&imgsensor_drv_lock);
-	LOG_INF("current framerate = %d\n ", imgsensor.current_fps);
-	set_max_framerate(imgsensor.current_fps,1);
 
-	return ERROR_NONE;
+	if(OV5670_During_testpattern == KAL_TRUE)
+	{
+		OV5670_write_cmos_sensor(0x4303,0x80);
+	}
+
+    return ERROR_NONE;
+}	
+
+
+
+UINT32 OV5670GetResolution(MSDK_SENSOR_RESOLUTION_INFO_STRUCT *pSensorResolution)
+{
+
+    OV5670DB("OV5670GetResolution!!\n");
+
+	pSensorResolution->SensorPreviewWidth	= OV5670_IMAGE_SENSOR_FULL_WIDTH;
+    pSensorResolution->SensorPreviewHeight	= OV5670_IMAGE_SENSOR_FULL_HEIGHT;
+	
+    pSensorResolution->SensorFullWidth		= OV5670_IMAGE_SENSOR_FULL_WIDTH;
+    pSensorResolution->SensorFullHeight		= OV5670_IMAGE_SENSOR_FULL_HEIGHT;
+	
+    pSensorResolution->SensorVideoWidth		= OV5670_IMAGE_SENSOR_VIDEO_WIDTH;
+    pSensorResolution->SensorVideoHeight    = OV5670_IMAGE_SENSOR_VIDEO_HEIGHT;
+    return ERROR_NONE;
+}   
+
+UINT32 OV5670GetInfo(MSDK_SCENARIO_ID_ENUM ScenarioId,
+                                                MSDK_SENSOR_INFO_STRUCT *pSensorInfo,
+                                                MSDK_SENSOR_CONFIG_STRUCT *pSensorConfigData)
+{
+
+	spin_lock(&ov5670mipiraw_drv_lock);
+	OV5670.imgMirror = pSensorConfigData->SensorImageMirror ;
+	spin_unlock(&ov5670mipiraw_drv_lock);
+
+    pSensorInfo->SensorOutputDataFormat= SENSOR_OUTPUT_FORMAT_RAW_B;
+   
+    pSensorInfo->SensorClockPolarity =SENSOR_CLOCK_POLARITY_LOW;
+    pSensorInfo->SensorClockFallingPolarity=SENSOR_CLOCK_POLARITY_LOW;
+    pSensorInfo->SensorHsyncPolarity = SENSOR_CLOCK_POLARITY_LOW;
+    pSensorInfo->SensorVsyncPolarity = SENSOR_CLOCK_POLARITY_LOW;
+
+    pSensorInfo->SensroInterfaceType=SENSOR_INTERFACE_TYPE_MIPI;
+
+    pSensorInfo->CaptureDelayFrame = 2;
+    pSensorInfo->PreviewDelayFrame = 1;
+    pSensorInfo->VideoDelayFrame = 2;
+
+    pSensorInfo->SensorDrivingCurrent = ISP_DRIVING_8MA;
+    pSensorInfo->AEShutDelayFrame = 0;	    
+    pSensorInfo->AESensorGainDelayFrame = 0;
+    pSensorInfo->AEISPGainDelayFrame = 2;
+
+    switch (ScenarioId)
+    {
+        case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
+            pSensorInfo->SensorClockFreq=24;
+            pSensorInfo->SensorClockRisingCount= 0;
+
+            pSensorInfo->SensorGrabStartX = OV5670_PV_X_START;
+            pSensorInfo->SensorGrabStartY = OV5670_PV_Y_START;
+
+            pSensorInfo->SensorMIPILaneNumber = SENSOR_MIPI_2_LANE;
+			
+            pSensorInfo->MIPIDataLowPwr2HighSpeedTermDelayCount = 0;
+	     	pSensorInfo->MIPIDataLowPwr2HighSpeedSettleDelayCount = 14;
+	    	pSensorInfo->MIPICLKLowPwr2HighSpeedTermDelayCount = 0;
+            pSensorInfo->SensorPacketECCOrder = 1;
+            break;
+        case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
+            pSensorInfo->SensorClockFreq=24;
+            pSensorInfo->SensorClockRisingCount= 0;
+
+            pSensorInfo->SensorGrabStartX = OV5670_VIDEO_X_START;
+            pSensorInfo->SensorGrabStartY = OV5670_VIDEO_Y_START;
+
+            pSensorInfo->SensorMIPILaneNumber = SENSOR_MIPI_2_LANE;
+			
+            pSensorInfo->MIPIDataLowPwr2HighSpeedTermDelayCount = 0;
+	     	pSensorInfo->MIPIDataLowPwr2HighSpeedSettleDelayCount = 14;
+	    	pSensorInfo->MIPICLKLowPwr2HighSpeedTermDelayCount = 0;
+            pSensorInfo->SensorPacketECCOrder = 1;
+            break;
+        case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
+		case MSDK_SCENARIO_ID_CAMERA_ZSD:
+            pSensorInfo->SensorClockFreq=24;
+            pSensorInfo->SensorClockRisingCount= 0;
+
+            pSensorInfo->SensorGrabStartX = OV5670_FULL_X_START;	
+            pSensorInfo->SensorGrabStartY = OV5670_FULL_Y_START;	
+
+            pSensorInfo->SensorMIPILaneNumber = SENSOR_MIPI_2_LANE;
+			
+            pSensorInfo->MIPIDataLowPwr2HighSpeedTermDelayCount = 0;
+            pSensorInfo->MIPIDataLowPwr2HighSpeedSettleDelayCount = 14;
+            pSensorInfo->MIPICLKLowPwr2HighSpeedTermDelayCount = 0;
+            pSensorInfo->SensorPacketECCOrder = 1;
+            break;
+        default:
+			pSensorInfo->SensorClockFreq=24;
+            pSensorInfo->SensorClockRisingCount= 0;
+
+            pSensorInfo->SensorGrabStartX = OV5670_PV_X_START;
+            pSensorInfo->SensorGrabStartY = OV5670_PV_Y_START;
+
+            pSensorInfo->SensorMIPILaneNumber = SENSOR_MIPI_2_LANE;
+			
+            pSensorInfo->MIPIDataLowPwr2HighSpeedTermDelayCount = 0;
+	     	pSensorInfo->MIPIDataLowPwr2HighSpeedSettleDelayCount = 14;
+	    	pSensorInfo->MIPICLKLowPwr2HighSpeedTermDelayCount = 0;
+            pSensorInfo->SensorPacketECCOrder = 1;
+            break;
+    }
+
+    memcpy(pSensorConfigData, &OV5670SensorConfigData, sizeof(MSDK_SENSOR_CONFIG_STRUCT));
+
+    return ERROR_NONE;
+}   /* OV5670GetInfo() */
+
+
+
+UINT32 OV5670Control(MSDK_SCENARIO_ID_ENUM ScenarioId, MSDK_SENSOR_EXPOSURE_WINDOW_STRUCT *pImageWindow,
+                                                MSDK_SENSOR_CONFIG_STRUCT *pSensorConfigData)
+{
+		spin_lock(&ov5670mipiraw_drv_lock);
+		OV5670CurrentScenarioId = ScenarioId;
+		spin_unlock(&ov5670mipiraw_drv_lock);
+		
+		OV5670DB("OV5670CurrentScenarioId=%d\n",OV5670CurrentScenarioId);
+
+	switch (ScenarioId)
+    {
+        case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
+            OV5670Preview(pImageWindow, pSensorConfigData);
+            break;
+        case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
+			OV5670DB("OV5670 video_preiew sync\n");
+			OV5670Video(pImageWindow, pSensorConfigData);
+			break;
+        case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
+		case MSDK_SCENARIO_ID_CAMERA_ZSD:
+            OV5670Capture(pImageWindow, pSensorConfigData);
+            break;
+
+        default:
+            return ERROR_INVALID_SCENARIO_ID;
+
+    }
+    return ERROR_NONE;
+} /* OV5670Control() */
+
+
+
+kal_uint32 OV5670_SET_FrameLength_ByVideoMode(UINT16 Video_TargetFps)
+{
+    UINT32 frameRate = 0;
+	kal_uint32 MIN_FrameLength=0;
+	
+	if(OV5670.OV5670AutoFlickerMode == KAL_TRUE)
+	{
+		if (Video_TargetFps==30)
+			frameRate= OV5670_AUTOFLICKER_OFFSET_30;
+		else if(Video_TargetFps==15)
+			frameRate= OV5670_AUTOFLICKER_OFFSET_15;
+		else
+			frameRate=Video_TargetFps*10;
+	
+		MIN_FrameLength = (OV5670.videoPclk*10000)/(OV5670_VIDEO_PERIOD_PIXEL_NUMS + OV5670.DummyPixels)/frameRate*10;
+	}
+	else
+		MIN_FrameLength = (OV5670.videoPclk*10000) /(OV5670_VIDEO_PERIOD_PIXEL_NUMS + OV5670.DummyPixels)/Video_TargetFps;
+
+     return MIN_FrameLength;
+
 }
 
-static kal_uint32 set_auto_flicker_mode(kal_bool enable, UINT16 framerate)
+
+
+UINT32 OV5670SetVideoMode(UINT16 u2FrameRate)
 {
-	LOG_INF("enable = %d, framerate = %d \n", enable, framerate);
-	spin_lock(&imgsensor_drv_lock);
-	if (enable) //enable auto flicker	  
-		imgsensor.autoflicker_en = KAL_TRUE;
-	else //Cancel Auto flick
-		imgsensor.autoflicker_en = KAL_FALSE;
-	spin_unlock(&imgsensor_drv_lock);
-	return ERROR_NONE;
+
+    kal_uint32 MIN_Frame_length =0,frameRate=0,extralines=0;
+    OV5670DB("[OV5670SetVideoMode] frame rate = %d\n", u2FrameRate);
+
+	spin_lock(&ov5670mipiraw_drv_lock);
+	OV5670_VIDEO_MODE_TARGET_FPS=u2FrameRate;
+	spin_unlock(&ov5670mipiraw_drv_lock);
+
+	if(u2FrameRate==0)
+	{
+		OV5670DB("Disable Video Mode or dynimac fps\n");
+		return KAL_TRUE;
+	}
+	if(u2FrameRate >30 || u2FrameRate <5)
+	    OV5670DB("abmornal frame rate seting,pay attention~\n");
+
+    if(OV5670.sensorMode == SENSOR_MODE_VIDEO)//video ScenarioId recording
+    {
+
+        MIN_Frame_length = OV5670_SET_FrameLength_ByVideoMode(u2FrameRate);
+
+		if((MIN_Frame_length <=OV5670_VIDEO_PERIOD_LINE_NUMS))
+		{
+			MIN_Frame_length = OV5670_VIDEO_PERIOD_LINE_NUMS;
+			OV5670DB("[OV5670SetVideoMode]current fps = %d\n", (OV5670.videoPclk*10000)  /(OV5670_VIDEO_PERIOD_PIXEL_NUMS)/OV5670_VIDEO_PERIOD_LINE_NUMS);
+		}
+		OV5670DB("[OV5670SetVideoMode]current fps (10 base)= %d\n", (OV5670.videoPclk*10000)*10/(OV5670_VIDEO_PERIOD_PIXEL_NUMS + OV5670.DummyPixels)/MIN_Frame_length);
+		extralines = MIN_Frame_length - OV5670_VIDEO_PERIOD_LINE_NUMS;
+		
+		spin_lock(&ov5670mipiraw_drv_lock);
+		OV5670.DummyPixels = 0;//define dummy pixels and lines
+		OV5670.DummyLines = extralines ;
+		spin_unlock(&ov5670mipiraw_drv_lock);
+		
+		OV5670_SetDummy(OV5670.DummyPixels,extralines);
+    }
+	
+	OV5670DB("[OV5670SetVideoMode]MIN_Frame_length=%d,OV5670.DummyLines=%d\n",MIN_Frame_length,OV5670.DummyLines);
+
+    return KAL_TRUE;
 }
 
 
-static kal_uint32 set_max_framerate_by_scenario(MSDK_SCENARIO_ID_ENUM scenario_id, MUINT32 framerate) 
+UINT32 OV5670SetAutoFlickerMode(kal_bool bEnable, UINT16 u2FrameRate)
 {
-	kal_uint32 frame_length;
-  
-	LOG_INF("scenario_id = %d, framerate = %d\n", scenario_id, framerate);
 
-	switch (scenario_id) {
+	if(bEnable) {   
+		spin_lock(&ov5670mipiraw_drv_lock);
+		OV5670.OV5670AutoFlickerMode = KAL_TRUE;
+		spin_unlock(&ov5670mipiraw_drv_lock);
+        OV5670DB("OV5670 Enable Auto flicker\n");
+    } else {
+    	spin_lock(&ov5670mipiraw_drv_lock);
+        OV5670.OV5670AutoFlickerMode = KAL_FALSE;
+		spin_unlock(&ov5670mipiraw_drv_lock);
+        OV5670DB("OV5670 Disable Auto flicker\n");
+    }
+
+    return ERROR_NONE;
+}
+
+
+UINT32 OV5670SetTestPatternMode(kal_bool bEnable)
+{
+    OV5670DB("[OV5670SetTestPatternMode] Test pattern enable:%d\n", bEnable);
+    if(bEnable == KAL_TRUE)
+    {
+        OV5670_During_testpattern = KAL_TRUE;
+
+		//OV5670_write_cmos_sensor(0x5000,0x16);// ; LENC off, MWB on, BPC on, WPC on
+		
+		OV5670_write_cmos_sensor(0x4303,0x08);
+    }
+	else
+	{
+        OV5670_During_testpattern = KAL_FALSE;
+		//OV5670_write_cmos_sensor(0x5000,0x96);// ; LENC on, MWB on, BPC on, WPC on
+		OV5670_write_cmos_sensor(0x4303,0x00);
+	}
+
+    return ERROR_NONE;
+}
+
+
+/*************************************************************************
+*
+* DESCRIPTION:
+* INTERFACE FUNCTION, FOR USER TO SET MAX  FRAMERATE;
+* 
+*************************************************************************/
+UINT32 OV5670MIPISetMaxFramerateByScenario(MSDK_SCENARIO_ID_ENUM scenarioId, MUINT32 frameRate) {
+	kal_uint32 pclk;
+	kal_int16 dummyLine;
+	kal_uint16 lineLength,frameHeight;
+		
+	OV5670DB("OV5670MIPISetMaxFramerateByScenario: scenarioId = %d, frame rate = %d\n",scenarioId,frameRate);
+	switch (scenarioId) {
 		case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
-			frame_length = imgsensor_info.pre.pclk / framerate * 10 / imgsensor_info.pre.linelength;
-			spin_lock(&imgsensor_drv_lock);
-			imgsensor.dummy_line = (frame_length > imgsensor_info.pre.framelength) ? (frame_length - imgsensor_info.pre.framelength) : 0;
-			imgsensor.frame_length = imgsensor_info.pre.framelength + imgsensor.dummy_line;
-			imgsensor.min_frame_length = imgsensor.frame_length;
-			spin_unlock(&imgsensor_drv_lock);
-			set_dummy();			
+			pclk = OV5670_PREVIEW_PCLK;
+			lineLength = OV5670_PV_PERIOD_PIXEL_NUMS;
+			frameHeight = (10 * pclk)/frameRate/lineLength;
+			dummyLine = frameHeight - OV5670_PV_PERIOD_LINE_NUMS;
+			if(dummyLine<0)
+				dummyLine = 0;
+			spin_lock(&ov5670mipiraw_drv_lock);
+			OV5670.sensorMode = SENSOR_MODE_PREVIEW;
+			spin_unlock(&ov5670mipiraw_drv_lock);
+			OV5670_SetDummy(0, dummyLine);			
 			break;			
 		case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
-			if(framerate == 0)
-				return ERROR_NONE;
-			frame_length = imgsensor_info.normal_video.pclk / framerate * 10 / imgsensor_info.normal_video.linelength;
-			spin_lock(&imgsensor_drv_lock);
-			imgsensor.dummy_line = (frame_length > imgsensor_info.normal_video.framelength) ? (frame_length - imgsensor_info.normal_video.framelength) : 0;			
-			imgsensor.frame_length = imgsensor_info.normal_video.framelength + imgsensor.dummy_line;
-			imgsensor.min_frame_length = imgsensor.frame_length;
-			spin_unlock(&imgsensor_drv_lock);
-			set_dummy();			
-			break;
-		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:		
-			case MSDK_SCENARIO_ID_CAMERA_ZSD:
-                frame_length = imgsensor_info.cap.pclk / framerate * 10 / imgsensor_info.cap.linelength;
-			spin_lock(&imgsensor_drv_lock);
-			imgsensor.dummy_line = (frame_length > imgsensor_info.cap.framelength) ? (frame_length - imgsensor_info.cap.framelength) : 0;
-			imgsensor.frame_length = imgsensor_info.cap.framelength + imgsensor.dummy_line;
-			imgsensor.min_frame_length = imgsensor.frame_length;
-			spin_unlock(&imgsensor_drv_lock);
-			set_dummy();	
+			pclk = OV5670_VIDEO_PCLK;
+			lineLength = OV5670_VIDEO_PERIOD_PIXEL_NUMS;
+			frameHeight = (10 * pclk)/frameRate/lineLength;
+			dummyLine = frameHeight - OV5670_VIDEO_PERIOD_LINE_NUMS;
+			if(dummyLine<0)
+				dummyLine = 0;
+			spin_lock(&ov5670mipiraw_drv_lock);
+			OV5670.sensorMode = SENSOR_MODE_VIDEO;
+			spin_unlock(&ov5670mipiraw_drv_lock);
+			OV5670_SetDummy(0, dummyLine);			
+			break;			
+			 break;
+		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
+		case MSDK_SCENARIO_ID_CAMERA_ZSD:			
+			pclk = OV5670_CAPTURE_PCLK;
+			lineLength = OV5670_FULL_PERIOD_PIXEL_NUMS;
+			frameHeight = (10 * pclk)/frameRate/lineLength;
+			dummyLine = frameHeight - OV5670_FULL_PERIOD_LINE_NUMS;
+			if(dummyLine<0)
+				dummyLine = 0;
+			spin_lock(&ov5670mipiraw_drv_lock);
+			OV5670.sensorMode = SENSOR_MODE_CAPTURE;
+			spin_unlock(&ov5670mipiraw_drv_lock);
+			OV5670_SetDummy(0, dummyLine);			
 			break;		
-		default:  //coding with  preview scenario by default
-			frame_length = imgsensor_info.pre.pclk / framerate * 10 / imgsensor_info.pre.linelength;
-			spin_lock(&imgsensor_drv_lock);
-			imgsensor.dummy_line = (frame_length > imgsensor_info.pre.framelength) ? (frame_length - imgsensor_info.pre.framelength) : 0;
-			imgsensor.frame_length = imgsensor_info.pre.framelength + imgsensor.dummy_line;
-			imgsensor.min_frame_length = imgsensor.frame_length;
-			spin_unlock(&imgsensor_drv_lock);
-			set_dummy();	
-			LOG_INF("error scenario_id = %d, we use preview scenario \n", scenario_id);
+        case MSDK_SCENARIO_ID_CAMERA_3D_PREVIEW:
+            break;
+        case MSDK_SCENARIO_ID_CAMERA_3D_VIDEO:
+			break;
+        case MSDK_SCENARIO_ID_CAMERA_3D_CAPTURE:   
+			break;		
+		default:
 			break;
 	}	
 	return ERROR_NONE;
 }
 
 
-static kal_uint32 get_default_framerate_by_scenario(MSDK_SCENARIO_ID_ENUM scenario_id, MUINT32 *framerate) 
+UINT32 OV5670MIPIGetDefaultFramerateByScenario(MSDK_SCENARIO_ID_ENUM scenarioId, MUINT32 *pframeRate) 
 {
-	LOG_INF("scenario_id = %d\n", scenario_id);
 
-	switch (scenario_id) {
+	switch (scenarioId) {
 		case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
-			*framerate = imgsensor_info.pre.max_framerate;
-			break;
 		case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
-			*framerate = imgsensor_info.normal_video.max_framerate;
-			break;
+			 *pframeRate = OV5670_MAX_FPS_PREVIEW;
+			 break;
 		case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
-			case MSDK_SCENARIO_ID_CAMERA_ZSD:
-			*framerate = imgsensor_info.cap.max_framerate;
-			break;
+		case MSDK_SCENARIO_ID_CAMERA_ZSD:
+			 *pframeRate = OV5670_MAX_FPS_CAPTURE;
+			break;		
+        case MSDK_SCENARIO_ID_CAMERA_3D_PREVIEW: //added
+        case MSDK_SCENARIO_ID_CAMERA_3D_VIDEO:
+        case MSDK_SCENARIO_ID_CAMERA_3D_CAPTURE: //added   
+			 *pframeRate = OV5670_MAX_FPS_CAPTURE;
+			break;		
 		default:
 			break;
 	}
@@ -1352,113 +1889,269 @@ static kal_uint32 get_default_framerate_by_scenario(MSDK_SCENARIO_ID_ENUM scenar
 	return ERROR_NONE;
 }
 
-static kal_uint32 set_test_pattern_mode(kal_bool enable)
-{
-	LOG_INF("enable: %d\n", enable);
+/* Sensor output window information */
 
-	if (enable) {
-		// 0x4303[3]: 1 enable,  0 disable
-		// only supports a special color bar test pattern
-		write_cmos_sensor(0x4303,0x08);
-	} else {
-		// 0x4303[3]: 1 enable,  0 disable
-		// only supports a special color bar test pattern
-		write_cmos_sensor(0x4303,0x00);
-	}	 
-	spin_lock(&imgsensor_drv_lock);
-	imgsensor.test_pattern = enable;
-	spin_unlock(&imgsensor_drv_lock);
-	return ERROR_NONE;
+/* SZ TCT xuejian.zhong add for CTS test*/
+
+static void OV5670GetAFMaxNumFocusAreas(UINT32 *pFeatureReturnPara32)
+{	
+    *pFeatureReturnPara32 = 0;    
+   // SENSORDB("OV5670GetAFMaxNumFocusAreas *pFeatureReturnPara32 = %d¥n",  *pFeatureReturnPara32);
 }
 
-static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
-							 UINT8 *feature_para,UINT32 *feature_para_len)
+static void OV5670GetAEMaxNumMeteringAreas(UINT32 *pFeatureReturnPara32)
+{     
+    *pFeatureReturnPara32 = 0;    
+  //  SENSORDB("OV5670GetAEMaxNumMeteringAreas *pFeatureReturnPara32 = %d¥n",  *pFeatureReturnPara32);	
+}
+
+static void OV5670GetExifInfo(UINT32 exifAddr)
 {
-	UINT16 *feature_return_para_16=(UINT16 *) feature_para;
-	UINT16 *feature_data_16=(UINT16 *) feature_para;
-	UINT32 *feature_return_para_32=(UINT32 *) feature_para;
-	UINT32 *feature_data_32=(UINT32 *) feature_para;
-	
-	MSDK_SENSOR_REG_INFO_STRUCT *sensor_reg_data=(MSDK_SENSOR_REG_INFO_STRUCT *) feature_para;
- 
-	LOG_INF("feature_id = %d\n", feature_id);
-	switch (feature_id) {
-		case SENSOR_FEATURE_GET_PERIOD:
-			*feature_return_para_16++ = imgsensor.line_length;
-			*feature_return_para_16 = imgsensor.frame_length;
-			*feature_para_len=4;
-			break;
-		case SENSOR_FEATURE_GET_PIXEL_CLOCK_FREQ:	 
-			*feature_return_para_32 = imgsensor.pclk;
-			*feature_para_len=4;
-			break;		   
-		case SENSOR_FEATURE_SET_ESHUTTER:
-			set_shutter(*feature_data_16);
-			break;
-		case SENSOR_FEATURE_SET_NIGHTMODE:
-			night_mode((BOOL) *feature_data_16);
-			break;
-		case SENSOR_FEATURE_SET_GAIN:		
-			set_gain((UINT16) *feature_data_16);
-			break;
-		case SENSOR_FEATURE_SET_FLASHLIGHT:
-			break;
-		case SENSOR_FEATURE_SET_ISP_MASTER_CLOCK_FREQ:
-			break;
-		case SENSOR_FEATURE_SET_REGISTER:
-			write_cmos_sensor(sensor_reg_data->RegAddr, sensor_reg_data->RegData);
-			break;
-		case SENSOR_FEATURE_GET_REGISTER:
-			sensor_reg_data->RegData = read_cmos_sensor(sensor_reg_data->RegAddr);
-			break;
-		case SENSOR_FEATURE_GET_LENS_DRIVER_ID:
-			// get the lens driver ID from EEPROM or just return LENS_DRIVER_ID_DO_NOT_CARE
-			// if EEPROM does not exist in camera module.
-			*feature_return_para_32=LENS_DRIVER_ID_DO_NOT_CARE;
-			*feature_para_len=4;
-			break;
-		case SENSOR_FEATURE_SET_VIDEO_MODE:
-			set_video_mode(*feature_data_16);
-			break; 
-		case SENSOR_FEATURE_CHECK_SENSOR_ID:
-			get_imgsensor_id(feature_return_para_32); 
-			break; 
-		case SENSOR_FEATURE_SET_AUTO_FLICKER_MODE:
-			set_auto_flicker_mode((BOOL)*feature_data_16,*(feature_data_16+1));
-			break;
+    SENSOR_EXIF_INFO_STRUCT* pExifInfo = (SENSOR_EXIF_INFO_STRUCT*)exifAddr;
+    pExifInfo->FNumber = 28;
+    pExifInfo->AEISOSpeed = AE_ISO_100;
+    pExifInfo->AWBMode = AWB_MODE_AUTO;
+    pExifInfo->CapExposureTime = 0;
+    pExifInfo->FlashLightTimeus = 0;
+    pExifInfo->RealISOValue = AE_ISO_100;
+}
+
+/* SZ TCT xuejian.zhong  end */
+
+
+UINT32 OV5670FeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
+                                                                UINT8 *pFeaturePara,UINT32 *pFeatureParaLen)
+{
+    UINT16 *pFeatureReturnPara16=(UINT16 *) pFeaturePara;
+    UINT16 *pFeatureData16=(UINT16 *) pFeaturePara;
+    UINT32 *pFeatureReturnPara32=(UINT32 *) pFeaturePara;
+    UINT32 *pFeatureData32=(UINT32 *) pFeaturePara;
+    UINT32 SensorRegNumber;
+    UINT32 i;
+    PNVRAM_SENSOR_DATA_STRUCT pSensorDefaultData=(PNVRAM_SENSOR_DATA_STRUCT) pFeaturePara;
+    MSDK_SENSOR_CONFIG_STRUCT *pSensorConfigData=(MSDK_SENSOR_CONFIG_STRUCT *) pFeaturePara;
+    MSDK_SENSOR_REG_INFO_STRUCT *pSensorRegData=(MSDK_SENSOR_REG_INFO_STRUCT *) pFeaturePara;
+    MSDK_SENSOR_GROUP_INFO_STRUCT *pSensorGroupInfo=(MSDK_SENSOR_GROUP_INFO_STRUCT *) pFeaturePara;
+    MSDK_SENSOR_ITEM_INFO_STRUCT *pSensorItemInfo=(MSDK_SENSOR_ITEM_INFO_STRUCT *) pFeaturePara;
+    MSDK_SENSOR_ENG_INFO_STRUCT	*pSensorEngInfo=(MSDK_SENSOR_ENG_INFO_STRUCT *) pFeaturePara;
+
+    switch (FeatureId)
+    {
+        case SENSOR_FEATURE_GET_RESOLUTION:
+            *pFeatureReturnPara16++= OV5670_IMAGE_SENSOR_FULL_WIDTH;
+            *pFeatureReturnPara16= OV5670_IMAGE_SENSOR_FULL_HEIGHT;
+            *pFeatureParaLen=4;
+            break;
+        case SENSOR_FEATURE_GET_PERIOD:
+				*pFeatureReturnPara16++= OV5670_FeatureControl_PERIOD_PixelNum;
+				*pFeatureReturnPara16= OV5670_FeatureControl_PERIOD_LineNum;
+				*pFeatureParaLen=4;
+				break;
+        case SENSOR_FEATURE_GET_PIXEL_CLOCK_FREQ:
+			switch(OV5670CurrentScenarioId)
+			{
+				case MSDK_SCENARIO_ID_CAMERA_PREVIEW:
+					*pFeatureReturnPara32 = OV5670_PREVIEW_PCLK;
+					*pFeatureParaLen=4;
+					break;
+				case MSDK_SCENARIO_ID_VIDEO_PREVIEW:
+					*pFeatureReturnPara32 = OV5670_VIDEO_PCLK;
+					*pFeatureParaLen=4;
+					break;
+				case MSDK_SCENARIO_ID_CAMERA_CAPTURE_JPEG:
+				case MSDK_SCENARIO_ID_CAMERA_ZSD:
+					*pFeatureReturnPara32 = OV5670_CAPTURE_PCLK;
+					*pFeatureParaLen=4;
+					break;
+				default:
+					*pFeatureReturnPara32 = OV5670_PREVIEW_PCLK;
+					*pFeatureParaLen=4;
+					break;
+			}
+		    break;
+
+        case SENSOR_FEATURE_SET_ESHUTTER:
+            OV5670_SetShutter(*pFeatureData16);
+            break;
+        case SENSOR_FEATURE_SET_NIGHTMODE:
+            OV5670_NightMode((BOOL) *pFeatureData16);
+            break;
+        case SENSOR_FEATURE_SET_GAIN:  
+           OV5670_SetGain((UINT16) *pFeatureData16);
+            break;
+        case SENSOR_FEATURE_SET_FLASHLIGHT:
+            break;
+        case SENSOR_FEATURE_SET_ISP_MASTER_CLOCK_FREQ:
+            //OV5670_isp_master_clock=*pFeatureData32;
+            break;
+        case SENSOR_FEATURE_SET_REGISTER:
+            OV5670_write_cmos_sensor(pSensorRegData->RegAddr, pSensorRegData->RegData);
+            break;
+        case SENSOR_FEATURE_GET_REGISTER:
+            pSensorRegData->RegData = OV5670_read_cmos_sensor(pSensorRegData->RegAddr);
+            break;
+        case SENSOR_FEATURE_SET_CCT_REGISTER:
+            SensorRegNumber=FACTORY_END_ADDR;
+            for (i=0;i<SensorRegNumber;i++)
+            {
+            	spin_lock(&ov5670mipiraw_drv_lock);
+                OV5670SensorCCT[i].Addr=*pFeatureData32++;
+                OV5670SensorCCT[i].Para=*pFeatureData32++;
+				spin_unlock(&ov5670mipiraw_drv_lock);
+            }
+            break;
+        case SENSOR_FEATURE_GET_CCT_REGISTER:
+            SensorRegNumber=FACTORY_END_ADDR;
+            if (*pFeatureParaLen<(SensorRegNumber*sizeof(SENSOR_REG_STRUCT)+4))
+                return FALSE;
+            *pFeatureData32++=SensorRegNumber;
+            for (i=0;i<SensorRegNumber;i++)
+            {
+                *pFeatureData32++=OV5670SensorCCT[i].Addr;
+                *pFeatureData32++=OV5670SensorCCT[i].Para;
+            }
+            break;
+        case SENSOR_FEATURE_SET_ENG_REGISTER:
+            SensorRegNumber=ENGINEER_END;
+            for (i=0;i<SensorRegNumber;i++)
+            {
+            	spin_lock(&ov5670mipiraw_drv_lock);
+                OV5670SensorReg[i].Addr=*pFeatureData32++;
+                OV5670SensorReg[i].Para=*pFeatureData32++;
+				spin_unlock(&ov5670mipiraw_drv_lock);
+            }
+            break;
+        case SENSOR_FEATURE_GET_ENG_REGISTER:
+            SensorRegNumber=ENGINEER_END;
+            if (*pFeatureParaLen<(SensorRegNumber*sizeof(SENSOR_REG_STRUCT)+4))
+                return FALSE;
+            *pFeatureData32++=SensorRegNumber;
+            for (i=0;i<SensorRegNumber;i++)
+            {
+                *pFeatureData32++=OV5670SensorReg[i].Addr;
+                *pFeatureData32++=OV5670SensorReg[i].Para;
+            }
+            break;
+        case SENSOR_FEATURE_GET_REGISTER_DEFAULT:
+            if (*pFeatureParaLen>=sizeof(NVRAM_SENSOR_DATA_STRUCT))
+            {
+                pSensorDefaultData->Version=NVRAM_CAMERA_SENSOR_FILE_VERSION;
+                pSensorDefaultData->SensorId=OV5670MIPI_SENSOR_ID;
+                memcpy(pSensorDefaultData->SensorEngReg, OV5670SensorReg, sizeof(SENSOR_REG_STRUCT)*ENGINEER_END);
+                memcpy(pSensorDefaultData->SensorCCTReg, OV5670SensorCCT, sizeof(SENSOR_REG_STRUCT)*FACTORY_END_ADDR);
+            }
+            else
+                return FALSE;
+            *pFeatureParaLen=sizeof(NVRAM_SENSOR_DATA_STRUCT);
+            break;
+        case SENSOR_FEATURE_GET_CONFIG_PARA:
+            memcpy(pSensorConfigData, &OV5670SensorConfigData, sizeof(MSDK_SENSOR_CONFIG_STRUCT));
+            *pFeatureParaLen=sizeof(MSDK_SENSOR_CONFIG_STRUCT);
+            break;
+        case SENSOR_FEATURE_CAMERA_PARA_TO_SENSOR:
+            OV5670_camera_para_to_sensor();
+            break;
+
+        case SENSOR_FEATURE_SENSOR_TO_CAMERA_PARA:
+            OV5670_sensor_to_camera_para();
+            break;
+        case SENSOR_FEATURE_GET_GROUP_COUNT:
+            *pFeatureReturnPara32++=OV5670_get_sensor_group_count();
+            *pFeatureParaLen=4;
+            break;
+        case SENSOR_FEATURE_GET_GROUP_INFO:
+            OV5670_get_sensor_group_info(pSensorGroupInfo->GroupIdx, pSensorGroupInfo->GroupNamePtr, &pSensorGroupInfo->ItemCount);
+            *pFeatureParaLen=sizeof(MSDK_SENSOR_GROUP_INFO_STRUCT);
+            break;
+        case SENSOR_FEATURE_GET_ITEM_INFO:
+            OV5670_get_sensor_item_info(pSensorItemInfo->GroupIdx,pSensorItemInfo->ItemIdx, pSensorItemInfo);
+            *pFeatureParaLen=sizeof(MSDK_SENSOR_ITEM_INFO_STRUCT);
+            break;
+
+        case SENSOR_FEATURE_SET_ITEM_INFO:
+            OV5670_set_sensor_item_info(pSensorItemInfo->GroupIdx, pSensorItemInfo->ItemIdx, pSensorItemInfo->ItemValue);
+            *pFeatureParaLen=sizeof(MSDK_SENSOR_ITEM_INFO_STRUCT);
+            break;
+
+        case SENSOR_FEATURE_GET_ENG_INFO:
+            pSensorEngInfo->SensorId = 129;
+            pSensorEngInfo->SensorType = CMOS_SENSOR;
+            pSensorEngInfo->SensorOutputDataFormat=SENSOR_OUTPUT_FORMAT_RAW_B;
+            *pFeatureParaLen=sizeof(MSDK_SENSOR_ENG_INFO_STRUCT);
+            break;
+        case SENSOR_FEATURE_GET_LENS_DRIVER_ID:
+            // get the lens driver ID from EEPROM or just return LENS_DRIVER_ID_DO_NOT_CARE
+            // if EEPROM does not exist in camera module.
+            *pFeatureReturnPara32=LENS_DRIVER_ID_DO_NOT_CARE;
+            *pFeatureParaLen=4;
+            break;
+
+        case SENSOR_FEATURE_INITIALIZE_AF:
+            break;
+        case SENSOR_FEATURE_CONSTANT_AF:
+            break;
+        case SENSOR_FEATURE_MOVE_FOCUS_LENS:
+            break;
+        case SENSOR_FEATURE_SET_VIDEO_MODE:
+            OV5670SetVideoMode(*pFeatureData16);
+            break;
+        case SENSOR_FEATURE_CHECK_SENSOR_ID:
+            OV5670GetSensorID(pFeatureReturnPara32);
+            break;
+        case SENSOR_FEATURE_SET_AUTO_FLICKER_MODE:
+            OV5670SetAutoFlickerMode((BOOL)*pFeatureData16, *(pFeatureData16+1));
+	        break;
 		case SENSOR_FEATURE_SET_MAX_FRAME_RATE_BY_SCENARIO:
-			set_max_framerate_by_scenario((MSDK_SCENARIO_ID_ENUM)*feature_data_32, *(feature_data_32+1));
+			OV5670MIPISetMaxFramerateByScenario((MSDK_SCENARIO_ID_ENUM)*pFeatureData32, *(pFeatureData32+1));
 			break;
 		case SENSOR_FEATURE_GET_DEFAULT_FRAME_RATE_BY_SCENARIO:
-			get_default_framerate_by_scenario((MSDK_SCENARIO_ID_ENUM)*feature_data_32, (MUINT32 *)(*(feature_data_32+1)));
+			OV5670MIPIGetDefaultFramerateByScenario((MSDK_SCENARIO_ID_ENUM)*pFeatureData32, (MUINT32 *)(*(pFeatureData32+1)));
 			break;
 		case SENSOR_FEATURE_SET_TEST_PATTERN:
-			set_test_pattern_mode((BOOL)*feature_data_16);
+			OV5670SetTestPatternMode((BOOL)*pFeatureData16);
 			break;
-		case SENSOR_FEATURE_GET_TEST_PATTERN_CHECKSUM_VALUE: //for factory mode auto testing			 
-			*feature_return_para_32 = imgsensor_info.checksum_value;
-			*feature_para_len=4;							 
-			break;				
-		default:
+		case SENSOR_FEATURE_GET_TEST_PATTERN_CHECKSUM_VALUE://for factory mode auto testing 			
+			*pFeatureReturnPara32=OV5670_TEST_PATTERN_CHECKSUM; 		  
+			*pFeatureParaLen=4; 							
+		     break;
+			/*SZ TCT xuejian.zhong add for CTS test */
+		case SENSOR_FEATURE_GET_AF_MAX_NUM_FOCUS_AREAS:
+			OV5670GetAFMaxNumFocusAreas(pFeatureData32);
+			*pFeatureParaLen=4;							 
 			break;
-	}
-  
-	return ERROR_NONE;
-}	/*	feature_control()  */
 
-static SENSOR_FUNCTION_STRUCT sensor_func = {
-	open,
-	get_info,
-	get_resolution,
-	feature_control,
-	control,
-	close
+		case SENSOR_FEATURE_GET_AE_MAX_NUM_METERING_AREAS:
+			OV5670GetAEMaxNumMeteringAreas(pFeatureData32);
+			*pFeatureParaLen=4;							 
+			break;
+		case SENSOR_FEATURE_GET_EXIF_INFO:
+		//	SENSORDB("SENSOR_FEATURE_GET_EXIF_INFO¥n");
+		//	SENSORDB("EXIF addr = 0x%x¥n",*pFeatureData32);
+
+			OV5670GetExifInfo(*pFeatureData32);
+			break;
+			/* xuejian.zhong add end */
+        default:
+            break;
+    }
+    return ERROR_NONE;
+}	
+
+
+SENSOR_FUNCTION_STRUCT	SensorFuncOV5670=
+{
+    OV5670Open,
+    OV5670GetInfo,
+    OV5670GetResolution,
+    OV5670FeatureControl,
+    OV5670Control,
+    OV5670Close
 };
 
 UINT32 OV5670_MIPI_RAW_SensorInit(PSENSOR_FUNCTION_STRUCT *pfFunc)
 {
-	/* To Do : Check Sensor status here */
-	if (pfFunc!=NULL)
-		*pfFunc=&sensor_func;
-	return ERROR_NONE;
-}	/*	OV5670_MIPI_RAW_SensorInit	*/
+    if (pfFunc!=NULL)
+        *pfFunc=&SensorFuncOV5670;
+
+    return ERROR_NONE;
+}  

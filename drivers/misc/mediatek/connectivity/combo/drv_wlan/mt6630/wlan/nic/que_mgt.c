@@ -3197,8 +3197,23 @@ P_SW_RFB_T qmHandleRxPackets(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prSwRfbList
             }
 
         }
+#if CFG_SUPPORT_WAPI
 		/* Todo:: Move the data class error check here */
-
+		if (prCurrSwRfb->u2PacketLen > ETHER_HEADER_LEN) {
+			PUINT_8 pc = (PUINT_8) prCurrSwRfb->pvHeader;
+			UINT_16 u2Etype = 0;
+			u2Etype = (pc[ETHER_TYPE_LEN_OFFSET] << 8) | (pc[ETHER_TYPE_LEN_OFFSET + 1]);
+			/* for wapi integrity test. WPI_1x packet should be always in non-encrypted mode.
+				if we received any WPI(0x88b4) packet that is encrypted, drop here. */
+			if (u2Etype == ETH_WPI_1X &&
+				HAL_RX_STATUS_GET_SEC_MODE(prRxStatus) != 0) {
+				DBGLOG(QM, INFO, ("drop wpi packet with sec mode\n"));
+				prCurrSwRfb->eDst = RX_PKT_DESTINATION_NULL;
+				QUEUE_INSERT_TAIL(prReturnedQue, (P_QUE_ENTRY_T) prCurrSwRfb);
+				continue;
+			}
+		}
+#endif
         if (prCurrSwRfb->fgReorderBuffer && !fgIsBMC && fgIsHTran) {
             /* If this packet should dropped or indicated to the host immediately,
             *  it should be enqueued into the rReturnedQue with specific flags. If

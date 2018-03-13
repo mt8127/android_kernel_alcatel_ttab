@@ -50,7 +50,6 @@ int kdCISModulePowerOn(CAMERA_DUAL_CAMERA_SENSOR_ENUM SensorIdx, char *currSenso
 #define IDX_PS_ON   2
 #define IDX_PS_OFF  3
 
-#define IDX_SUB_CAM 1
 
     u32 pinSet[2][8] =
     {
@@ -219,16 +218,6 @@ int kdCISModulePowerOn(CAMERA_DUAL_CAMERA_SENSOR_ENUM SensorIdx, char *currSenso
             //OV5648 Power UP
             //First Power Pin low and Reset Pin Low
             
-       /*[BUGFIX] ADD-BEGIN by sz.chengming.xiang for PR-1021927(pixi3-7-3G) 2015/06/15
-       set front sensor hi708's pwdn to high, make sure it is in Hi-Z state so that 
-       it will not affect i2c comunication on this bus*/
-			if (GPIO_CAMERA_INVALID != pinSet[IDX_SUB_CAM][IDX_PS_CMPDN]) {
-				if(mt_set_gpio_mode(pinSet[IDX_SUB_CAM][IDX_PS_CMPDN],pinSet[IDX_SUB_CAM][IDX_PS_CMPDN+IDX_PS_MODE])){PK_DBG("[CAMERA LENS] set gpio mode failed!! \n");}
-				if(mt_set_gpio_dir(pinSet[IDX_SUB_CAM][IDX_PS_CMPDN],GPIO_DIR_OUT)){PK_DBG("[CAMERA LENS] set gpio dir failed!! \n");}
-				if(mt_set_gpio_out(pinSet[IDX_SUB_CAM][IDX_PS_CMPDN],pinSet[IDX_SUB_CAM][IDX_PS_CMPDN+IDX_PS_ON])){PK_DBG("[CAMERA LENS] set gpio failed!! \n");} //high == power down lens module
-			}
-       /*[BUGFIX] ADD-END by sz.chengming.xiang for PR-1021927 2015/06/15*/
-
             if(TRUE != hwPowerOn(CAMERA_POWER_VCAM_D2, VOL_1800, mode_name))
             {
                 PK_DBG("[CAMERA SENSOR] Fail to enable IO power\n");
@@ -269,6 +258,9 @@ int kdCISModulePowerOn(CAMERA_DUAL_CAMERA_SENSOR_ENUM SensorIdx, char *currSenso
             
             // wait power to be stable 
             mdelay(25);
+            
+            
+;
         }
         else if ((pinSetIdx == 0) && currSensorName && (0 == strcmp(SENSOR_DRVNAME_S5K5E2YA_MIPI_RAW,currSensorName))) 
         {
@@ -595,17 +587,7 @@ int kdCISModulePowerOn(CAMERA_DUAL_CAMERA_SENSOR_ENUM SensorIdx, char *currSenso
             if(mt_set_gpio_out(pinSet[pinSetIdx][IDX_PS_CMRST],pinSet[pinSetIdx][IDX_PS_CMRST+IDX_PS_OFF])){PK_DBG("[CAMERA SENSOR] set gpio failed!! \n");} //low == reset sensor
     	    if(mt_set_gpio_out(pinSet[pinSetIdx][IDX_PS_CMPDN],pinSet[pinSetIdx][IDX_PS_CMPDN+IDX_PS_OFF])){PK_DBG("[CAMERA LENS] set gpio failed!! \n");} //high == power down lens module
         }
-        
-        /*[BUGFIX] ADD-BEGIN by sz.chengming.xiang for PR-1021927(pixi3-7-3G) 2015/06/15
-        as open main camera will set sub cam's pwd to high ,so should set it back when close main camera
-        to prevent current leakage */
-        if ((pinSetIdx != IDX_SUB_CAM) && (GPIO_CAMERA_INVALID != pinSet[IDX_SUB_CAM][IDX_PS_CMPDN])) {
-        {
-        	mt_set_gpio_mode(pinSet[IDX_SUB_CAM][IDX_PS_CMPDN],pinSet[IDX_SUB_CAM][IDX_PS_CMPDN+IDX_PS_MODE]);
-        	mt_set_gpio_dir(pinSet[IDX_SUB_CAM][IDX_PS_CMPDN],GPIO_DIR_OUT);
-          mt_set_gpio_out(pinSet[IDX_SUB_CAM][IDX_PS_CMPDN],pinSet[IDX_SUB_CAM][IDX_PS_CMPDN+IDX_PS_OFF]); 	
-        }
-        
+
     	if(TRUE != hwPowerDown(CAMERA_POWER_VCAM_A,mode_name)) {
             PK_DBG("[CAMERA SENSOR] Fail to OFF a power\n");
         }
@@ -628,7 +610,7 @@ int kdCISModulePowerOn(CAMERA_DUAL_CAMERA_SENSOR_ENUM SensorIdx, char *currSenso
 _kdCISModulePowerOn_exit_:
     return -EIO;
 }
-}
+
 EXPORT_SYMBOL(kdCISModulePowerOn);
 
 

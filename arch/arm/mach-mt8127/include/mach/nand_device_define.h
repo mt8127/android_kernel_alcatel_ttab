@@ -114,8 +114,8 @@ typedef struct
    u32 advancedmode;
    struct MLC_feature_set feature_set;
 }flashdev_info_t,*pflashdev_info;
-#if 0
-static const flashdev_info gen_FlashTable[]={
+
+static const flashdev_info_t gen_FlashTable_p[]={
 	{{0x45,0xDE,0x94,0x93,0x76,0x57}, 6,5,IO_8BIT,8192,4096,16384,1280,0x10804222, 0xC03222,0x101,80,VEND_SANDISK,1024, "SDTNQGAMA008G ",0 ,
 		{SANDISK_16K, {0xEF,0xEE,0xFF,16,0x11,0,1,RTYPE_SANDISK_19NM,{0x80, 0x00},{0x80, 0x01}},
 		{RAND_TYPE_SAMSUNG,{0x2D2D,1,1,1,1,1}}}},
@@ -147,5 +147,6 @@ static const flashdev_info gen_FlashTable[]={
 		{SANDISK_16K, {0xEF,0xEE,0xFF,7,0xFF,7,0,RTYPE_TOSHIBA,{0x80, 0x00},{0x80, 0x01}},
 		{RAND_TYPE_SAMSUNG,{0x2D2D,1,1,1,1,1}}}},
 };
-#endif
+
+static unsigned int flash_number = sizeof(gen_FlashTable_p) / sizeof(flashdev_info_t);
 #endif

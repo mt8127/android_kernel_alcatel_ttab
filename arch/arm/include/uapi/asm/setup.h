@@ -229,12 +229,14 @@ struct tag {
                 tag_dfo_boot     dfo_data;
                 struct tag_mdinfo_data mdinfo_data;
 		mem_desc_t tee_reserved_mem;
+#if 0
 #ifdef PT_ABTC_ATAG
 		struct tag_pt_info tag_pt_info;
 #endif
 #ifdef NAND_ABTC_ATAG
 		struct tag_nand_number tag_nand_number;
 		flashdev_info_t gen_FlashTable_p;
+#endif
 #endif
 	} u;
 };

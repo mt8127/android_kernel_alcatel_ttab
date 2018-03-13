@@ -186,7 +186,7 @@ static void process_dbg_opt(const char *opt)
         char *p = (char *)opt + 5;
         unsigned int addr = (unsigned int) simple_strtoul(p, &p, 16);
 
-        if (addr) 
+        if (addr >= 0xf4000000 && addr <= 0xf5000000)
         {
             unsigned int regVal = DISP_REG_GET(addr);
             DISP_MSG("regr: 0x%08X = 0x%08X\n", addr, regVal);
@@ -200,7 +200,7 @@ static void process_dbg_opt(const char *opt)
         char *p = (char *)opt + 5;
         unsigned int addr = (unsigned int) simple_strtoul(p, &p, 16);
         unsigned int val = (unsigned int) simple_strtoul(p + 1, &p, 16);
-        if (addr) 
+        if (addr >= 0xf4000000 && addr <= 0xf5000000)
         {
             unsigned int regVal;
             DISP_REG_SET(addr, val);

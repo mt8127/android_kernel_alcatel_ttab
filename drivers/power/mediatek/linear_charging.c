@@ -37,7 +37,6 @@
 #include <linux/mutex.h>
 #include <linux/wakelock.h>
 
-
  /* ============================================================ // */
  /* define */
  /* ============================================================ // */
@@ -62,8 +61,8 @@ CHR_CURRENT_ENUM 	g_temp_CC_value = CHARGE_CURRENT_0_00_MA;
 kal_uint32 		g_usb_state = USB_UNCONFIGURED;
 kal_uint32 		charging_full_current = CHARGING_FULL_CURRENT;	/* mA */
 kal_uint32 		v_cc2topoff_threshold = V_CC2TOPOFF_THRES;
- CHR_CURRENT_ENUM	ulc_cv_charging_current = AC_CHARGER_CURRENT;	
- kal_bool 		ulc_cv_charging_current_flag = KAL_FALSE;
+CHR_CURRENT_ENUM	ulc_cv_charging_current = AC_CHARGER_CURRENT;
+kal_bool 		ulc_cv_charging_current_flag = KAL_FALSE;
 static bool 		usb_unlimited=false;
 
 /* [PLATFORM]-Add-BEGIN by TCTSZ.leo.guo, 04/15/2015,  modify ntc temperature function */
@@ -1036,36 +1035,16 @@ PMU_STATUS BAT_PreChargeModeAction(void)
 #else
 	{
 		kal_bool charging_enable = KAL_FALSE;
-/* [PLATFORM]-MOD-BEGIN by TCTSZ huichen@tcl.com, 06/18/2015,  disable PWM charge mode FR-1027565*/
-#if 0
-
-		{
-		int int_CHR_CON1;
-		int ret;
-		ret=pmic_config_interface(CHR_CON0,0x0,0x1,0x0);
-		ret=pmic_read_interface(CHR_CON0,(&int_CHR_CON1),0x1,0x0);
-		printk("BAT_PreChargeModeAction OVP  Reg[0x%x]=0x%x\n", CHR_CON0, int_CHR_CON1);
-
 
 		/*Charging 9s and discharging 1s : start */
 		battery_charging_control(CHARGING_CMD_ENABLE, &charging_enable);
 		msleep(1000);
-		ret=pmic_read_interface(CHR_CON0,(&int_CHR_CON1),0x1,0x0);
-		printk("BAT_PreChargeModeAction OVP  Reg[0x%x]=0x%x\n", CHR_CON0, int_CHR_CON1);
-	}
-#endif
-/* [PLATFORM]-MOD-END by TCTSZ huichen@tcl.com, 06/18/2015*/
 	}
 #endif
 
 	charging_current_calibration();
 	pchr_turn_on_charging();
-/* [PLATFORM]-MOD-BEGIN by TCTSZ huichen@tcl.com, 05/18/2015,  modify OVP function FR-1005346*/
-#if 0
-	msleep(50);//need sleep
-	pmic_config_interface(CHR_CON0,0x1,0x1,0x0);
-#endif
-/* [PLATFORM]-MOD-END by TCTSZ huichen@tcl.com, 05/18/2015*/
+
 	return PMU_STATUS_OK;
 }
 
@@ -1091,40 +1070,18 @@ PMU_STATUS BAT_ConstantCurrentModeAction(void)
 	// no disable charging#else
 #else
 	{
-
-
 		kal_bool charging_enable = KAL_FALSE;
-/* [PLATFORM]-MOD-BEGIN by TCTSZ huichen@tcl.com, 06/18/2015,  disable PWM charge mode FR-1027565*/
-#if 0
-		{
-		int int_CHR_CON1;
-		int ret;
-		ret=pmic_config_interface(CHR_CON0,0x0,0x1,0x0);
-		ret=pmic_read_interface(CHR_CON0,(&int_CHR_CON1),0x1,0x0);
-		printk("BAT_PreChargeModeAction OVP  Reg[0x%x]=0x%x\n", CHR_CON0, int_CHR_CON1);
 
 		/* Charging 9s and discharging 1s : start */
 		battery_charging_control(CHARGING_CMD_ENABLE, &charging_enable);
 		msleep(1000);
-		ret=pmic_read_interface(CHR_CON0,(&int_CHR_CON1),0x1,0x0);
-		printk("BAT_PreChargeModeAction OVP  Reg[0x%x]=0x%x\n", CHR_CON0, int_CHR_CON1);
-	}
-#endif
-/* [PLATFORM]-MOD-END by TCTSZ huichen@tcl.com, 06/18/2015*/
-
-
 	}	
 #endif
 
 	charging_current_calibration();
 
 	pchr_turn_on_charging();
-/* [PLATFORM]-MOD-BEGIN by TCTSZ huichen@tcl.com, 05/18/2015,  modify OVP function FR-1005346*/
-#if 0
-	msleep(50);
-	pmic_config_interface(CHR_CON0,0x1,0x1,0x0);
-#endif
-/* [PLATFORM]-MOD-END by TCTSZ huichen@tcl.com, 05/18/2015*/
+
 	return PMU_STATUS_OK;
 }
 

@@ -1698,6 +1698,7 @@ priv_get_struct(IN struct net_device *prNetDev,
 	UINT_32 u4BufLen = 0;
 	PUINT_32 pu4IntBuf = NULL;
 	int status = 0;
+    UINT_32 u4CopyDataMax = 0;
 
 	kalMemZero(&aucOidBuf[0], sizeof(aucOidBuf));
 
@@ -1763,11 +1764,14 @@ priv_get_struct(IN struct net_device *prNetDev,
 		pu4IntBuf = (PUINT_32) prIwReqData->data.pointer;
 		prNdisReq = (P_NDIS_TRANSPORT_STRUCT) &aucOidBuf[0];
 
-		if (copy_from_user(&prNdisReq->ndisOidContent[0],
-				   prIwReqData->data.pointer, prIwReqData->data.length)) {
-			DBGLOG(REQ, INFO, ("priv_get_struct() copy_from_user oidBuf fail\n"));
-			return -EFAULT;
-		}
+		u4CopyDataMax = sizeof(aucOidBuf) - OFFSET_OF(NDIS_TRANSPORT_STRUCT, ndisOidContent);
+		if ((prIwReqData->data.length > u4CopyDataMax)
+			|| copy_from_user(&prNdisReq->ndisOidContent[0],
+								prIwReqData->data.pointer,
+								prIwReqData->data.length)) {
+            DBGLOG(REQ, INFO, ("priv_get_struct() copy_from_user oidBuf fail\n"));
+            return -EFAULT;
+        }
 
 		prNdisReq->ndisOidCmd = OID_CUSTOM_SW_CTRL;
 		prNdisReq->inNdisOidlength = 8;

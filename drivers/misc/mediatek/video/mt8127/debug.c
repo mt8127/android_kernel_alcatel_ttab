@@ -150,12 +150,6 @@ static char STR_HELP[] =
     "        reg:[lcd|dpi|dsi|tvc|tve]\n"
     "             dump hw register values\n"
     "\n"
-    "        regw:addr=val\n"
-    "             write hw register\n"
-    "\n"
-    "        regr:addr\n"
-    "             read hw register\n"
-    "\n"     
     "       cpfbonly:[on|off]\n"
     "             capture UI layer only on/off\n"
     "\n"     
@@ -602,29 +596,6 @@ static void process_dbg_opt(const char *opt)
     else if (0 == strncmp(opt, "layer", 5))
     {
         dump_layer_info();
-    }
-    else if (0 == strncmp(opt, "regw:", 5))
-    {
-        char *p = (char *)opt + 5;
-        unsigned long addr = simple_strtoul(p, &p, 16);
-        unsigned long val  = simple_strtoul(p + 1, &p, 16);
-
-        if (addr) {
-            OUTREG32(addr, val);
-        } else {
-            goto Error;
-        }
-    }
-    else if (0 == strncmp(opt, "regr:", 5))
-    {
-        char *p = (char *)opt + 5;
-        unsigned int addr = (unsigned int) simple_strtoul(p, &p, 16);
-
-        if (addr) {
-            DISP_LOG_PRINT(ANDROID_LOG_INFO, "DBG", "Read register 0x%08x: 0x%08x\n", addr, INREG32(addr));
-        } else {
-            goto Error;
-        }
     }
     else if(0 == strncmp(opt, "bkl:", 4))
     {

@@ -99,6 +99,35 @@ extern int iMultiWriteReg(u8 *pData, u16 lens, u16 i2cId);
 
 
 MSDK_SCENARIO_ID_ENUM ov2680CurrentScenarioId = MSDK_SCENARIO_ID_CAMERA_PREVIEW;
+
+/* SZ TCT xuejian.zhong add for CTS test*/
+static void OV2680GetAFMaxNumFocusAreas(UINT32 *pFeatureReturnPara32)
+{	
+    *pFeatureReturnPara32 = 0;    
+    SENSORDB("OV2680GetAFMaxNumFocusAreas *pFeatureReturnPara32 = %d\n",  *pFeatureReturnPara32);
+}
+
+static void OV2680GetAEMaxNumMeteringAreas(UINT32 *pFeatureReturnPara32)
+{     
+    *pFeatureReturnPara32 = 0;    
+    SENSORDB("OV2680GetAEMaxNumMeteringAreas *pFeatureReturnPara32 = %d\n",  *pFeatureReturnPara32);	
+}
+
+static void OV2680GetExifInfo(UINT32 exifAddr)
+{
+    SENSOR_EXIF_INFO_STRUCT* pExifInfo = (SENSOR_EXIF_INFO_STRUCT*)exifAddr;
+    pExifInfo->FNumber = 28;
+    pExifInfo->AEISOSpeed = AE_ISO_100;
+    pExifInfo->AWBMode = AWB_MODE_AUTO;
+    pExifInfo->CapExposureTime = 0;
+    pExifInfo->FlashLightTimeus = 0;
+    pExifInfo->RealISOValue = AE_ISO_100;
+}
+
+/* SZ TCT xuejian.zhong  end */
+
+
+
 static OV2680_sensor_struct OV2680_sensor =
 {
   .eng =
@@ -963,8 +992,8 @@ static void OV2680MIPI_Sensor_preview(void)
 	OV2680_write_cmos_sensor(0x3813, 0x08);
 	OV2680_write_cmos_sensor(0x3814, 0x11);
 	OV2680_write_cmos_sensor(0x3815, 0x11);
-	OV2680_write_cmos_sensor(0x3820, 0xc4);
-	OV2680_write_cmos_sensor(0x3821, 0x04);
+	OV2680_write_cmos_sensor(0x3820, 0xc0);
+	OV2680_write_cmos_sensor(0x3821, 0x00);
 	OV2680_write_cmos_sensor(0x4008, 0x02);
 	OV2680_write_cmos_sensor(0x4009, 0x09);
 	OV2680_write_cmos_sensor(0x4837, 0x18);
@@ -1007,8 +1036,8 @@ static void OV2680MIPI_Sensor_2M_15fps(void)
 	OV2680_write_cmos_sensor(0x3813, 0x08);
 	OV2680_write_cmos_sensor(0x3814, 0x11);
 	OV2680_write_cmos_sensor(0x3815, 0x11);
-	OV2680_write_cmos_sensor(0x3820, 0xc4);
-	OV2680_write_cmos_sensor(0x3821, 0x04);
+	OV2680_write_cmos_sensor(0x3820, 0xc0);//0xc4
+	OV2680_write_cmos_sensor(0x3821, 0x00);//0x04
 	OV2680_write_cmos_sensor(0x4008, 0x02);
 	OV2680_write_cmos_sensor(0x4009, 0x09);
 	OV2680_write_cmos_sensor(0x4837, 0x30);
@@ -1981,6 +2010,29 @@ UINT32 OV2680FeatureControl(MSDK_SENSOR_FEATURE_ENUM FeatureId,
 			*pFeatureReturnPara32=OV2680_TEST_PATTERN_CHECKSUM; 		  
 			*pFeatureParaLen=4; 
             break;
+
+			/*SZ TCT xuejian.zhong add for CTS test */
+		case SENSOR_FEATURE_GET_AF_MAX_NUM_FOCUS_AREAS:
+			OV2680GetAFMaxNumFocusAreas(pFeatureReturnPara32);
+
+			*pFeatureParaLen=4;
+			break;
+
+		case SENSOR_FEATURE_GET_AE_MAX_NUM_METERING_AREAS:
+			OV2680GetAEMaxNumMeteringAreas(pFeatureReturnPara32);
+
+			*pFeatureParaLen=4;
+			break;
+		case SENSOR_FEATURE_GET_EXIF_INFO:
+			SENSORDB("SENSOR_FEATURE_GET_EXIF_INFO\n");
+			SENSORDB("EXIF addr = 0x%x\n",*pFeatureData32);
+
+			OV2680GetExifInfo(*pFeatureData32);
+			break;
+			/* xuejian.zhong add end */
+
+
+
         default:
             break;
     }

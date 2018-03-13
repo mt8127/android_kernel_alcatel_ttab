@@ -45,7 +45,15 @@ static DEFINE_MUTEX(leds_pmic_mutex);
  * variables
  ***************************************************************************/
 //struct cust_mt65xx_led* bl_setting_hal = NULL;
+
+ /*[PLATFORM]-ADD-BEIGIN by falin.luo 2015/6/15*/
+ /*hall sensor use bl_brightness_hal to detect system status*/
+#ifdef CONFIG_MTK_HALL
+unsigned int bl_brightness_hal = 102;
+#else
  static unsigned int bl_brightness_hal = 102;
+#endif
+/*[PLATFORM]-ADD-END by falin.luo 2015/6/15*/
 static unsigned int bl_duty_hal = 21;
 static unsigned int bl_div_hal = CLK_DIV1;
 static unsigned int bl_frequency_hal = 32000;
