@@ -73,6 +73,9 @@ static int scan_for_master(struct ubifs_info *c)
 		   (void *)snod->node + UBIFS_CH_SZ,
 		   UBIFS_MST_NODE_SZ - UBIFS_CH_SZ))
 		goto out;
+	/* MTK force recovery master node when ECC error */
+	if(sleb->ecc == 1)
+		goto out;
 	c->mst_offs = offs;
 	ubifs_scan_destroy(sleb);
 	return 0;
@@ -271,6 +274,12 @@ int ubifs_read_master(struct ubifs_info *c)
 			 * unmount routine will take care of this.
 			 */
 			return err;
+	} else if ((!c->ro_mount)&&(c->mst_node->flags & cpu_to_le32(UBIFS_MST_DIRTY)) != 0) {  
+		/* MTK force recover master node, when unclean reboot */
+		ubifs_msg("recovery needed, recovery master node");
+		err = ubifs_recover_master_node(c);
+		if(err)
+			return err;
 	}
 
 	/* Make sure that the recovery flag is clear */
@@ -352,10 +361,9 @@ int ubifs_read_master(struct ubifs_info *c)
  * ubifs_write_master - write master node.
  * @c: UBIFS file-system description object
  *
- * This function writes the master node. The caller has to take the
- * @c->mst_mutex lock before calling this function. Returns zero in case of
- * success and a negative error code in case of failure. The master node is
- * written twice to enable recovery.
+ * This function writes the master node. Returns zero in case of success and a
+ * negative error code in case of failure. The master node is written twice to
+ * enable recovery.
  */
 int ubifs_write_master(struct ubifs_info *c)
 {

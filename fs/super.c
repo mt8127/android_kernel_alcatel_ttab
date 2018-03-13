@@ -38,6 +38,8 @@
 
 
 LIST_HEAD(super_blocks);
+EXPORT_SYMBOL_GPL(super_blocks);
+
 DEFINE_SPINLOCK(sb_lock);
 
 static char *sb_writers_name[SB_FREEZE_LEVELS] = {
@@ -1151,7 +1153,9 @@ void __sb_end_write(struct super_block *sb, int level)
 	smp_mb();
 	if (waitqueue_active(&sb->s_writers.wait))
 		wake_up(&sb->s_writers.wait);
+	lockdep_off();
 	rwsem_release(&sb->s_writers.lock_map[level-1], 1, _RET_IP_);
+	lockdep_on();
 }
 EXPORT_SYMBOL(__sb_end_write);
 
@@ -1177,7 +1181,9 @@ static void acquire_freeze_lock(struct super_block *sb, int level, bool trylock,
 				break;
 			}
 	}
+	lockdep_off();
 	rwsem_acquire_read(&sb->s_writers.lock_map[level-1], 0, trylock, ip);
+	lockdep_on();
 }
 #endif
 

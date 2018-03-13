@@ -106,10 +106,14 @@ static inline long long empty_log_bytes(const struct ubifs_info *c)
 	h = (long long)c->lhead_lnum * c->leb_size + c->lhead_offs;
 	t = (long long)c->ltail_lnum * c->leb_size;
 
-	if (h >= t)
+	if (h > t)
 		return c->log_bytes - h + t;
-	else
+	else if (h != t)
 		return t - h;
+	else if (c->lhead_lnum != c->ltail_lnum)
+		return 0;
+	else
+		return c->log_bytes;
 }
 
 /**
@@ -401,11 +405,28 @@ int ubifs_log_start_commit(struct ubifs_info *c, int *ltail_lnum)
 
 	ubifs_pad(c, buf + len, ALIGN(len, c->min_io_size) - len);
 
-	/* Switch to the next log LEB */
-	if (c->lhead_offs) {
+#ifdef CONFIG_UBIFS_FS_FULL_USE_LOG
+	/* Not Switch to next log LEB, programming next available page in the same log LEB continuously*/
+
+	/* if available page is in the end of the LEB, switch to next LEB*/
+	if(c->lhead_offs >= (c->leb_size - (c->min_io_size * 4)) )
+	{
+		int old_lnum = c->lhead_lnum;
+		int old_offs = c->lhead_offs;
 		c->lhead_lnum = ubifs_next_log_lnum(c, c->lhead_lnum);
 		c->lhead_offs = 0;
+		ubifs_msg("switch log LEB %d:%d to %d:%d\n", old_lnum, old_offs, c->lhead_lnum, c->lhead_offs);
 	}
+#else
+	/* Switch to the next log LEB */
+	if (c->lhead_offs) {
+		int old_lnum = c->lhead_lnum;
+		int old_offs = c->lhead_offs;
+		c->lhead_lnum = ubifs_next_log_lnum(c, c->lhead_lnum);
+		c->lhead_offs = 0;
+		ubifs_msg("switch log LEB %d:%d to %d:%d\n", old_lnum, old_offs, c->lhead_lnum, c->lhead_offs);
+	}
+#endif
 
 	if (c->lhead_offs == 0) {
 		/* Must ensure next LEB has been unmapped */
@@ -416,7 +437,7 @@ int ubifs_log_start_commit(struct ubifs_info *c, int *ltail_lnum)
 
 	len = ALIGN(len, c->min_io_size);
 	dbg_log("writing commit start at LEB %d:0, len %d", c->lhead_lnum, len);
-	err = ubifs_leb_write(c, c->lhead_lnum, cs, 0, len);
+	err = ubifs_leb_write(c, c->lhead_lnum, cs, c->lhead_offs, len); //MTK, modify offset 0 -> c->lhead_offs
 	if (err)
 		goto out;
 
@@ -447,9 +468,9 @@ out:
  * @ltail_lnum: new log tail LEB number
  *
  * This function is called on when the commit operation was finished. It
- * moves log tail to new position and unmaps LEBs which contain obsolete data.
- * Returns zero in case of success and a negative error code in case of
- * failure.
+ * moves log tail to new position and updates the master node so that it stores
+ * the new log tail LEB number. Returns zero in case of success and a negative
+ * error code in case of failure.
  */
 int ubifs_log_end_commit(struct ubifs_info *c, int ltail_lnum)
 {
@@ -477,7 +498,12 @@ int ubifs_log_end_commit(struct ubifs_info *c, int ltail_lnum)
 	spin_unlock(&c->buds_lock);
 
 	err = dbg_check_bud_bytes(c);
+	if (err)
+		goto out;
 
+	err = ubifs_write_master(c);
+
+out:
 	mutex_unlock(&c->log_mutex);
 	return err;
 }
@@ -645,10 +671,14 @@ int ubifs_consolidate_log(struct ubifs_info *c)
 	struct rb_root done_tree = RB_ROOT;
 	int lnum, err, first = 1, write_lnum, offs = 0;
 	void *buf;
+#if defined(CONFIG_UBIFS_FS_FULL_USE_LOG)
+	const struct ubifs_cs_node *node;
+	unsigned long long cs_sqnum = 0;
+#endif
 
 	dbg_rcvry("log tail LEB %d, log head LEB %d", c->ltail_lnum,
 		  c->lhead_lnum);
-	buf = vmalloc(c->leb_size);
+	buf = kmalloc(c->leb_size, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 	lnum = c->ltail_lnum;
@@ -659,7 +689,28 @@ int ubifs_consolidate_log(struct ubifs_info *c)
 			err = PTR_ERR(sleb);
 			goto out_free;
 		}
+#if defined(CONFIG_UBIFS_FS_FULL_USE_LOG)
+		/* Search for the last cs node */
+		if(lnum == c->ltail_lnum)
+		{
+			list_for_each_entry_reverse(snod, &sleb->nodes, list) {
+				if(snod->type == UBIFS_CS_NODE)
+					break;
+			}
+			node = snod->node;
+			cs_sqnum = le64_to_cpu(node->ch.sqnum);
+		}
+#endif
+
 		list_for_each_entry(snod, &sleb->nodes, list) {
+#if defined(CONFIG_UBIFS_FS_FULL_USE_LOG)
+			if(lnum == c->ltail_lnum)
+			{
+				/* Skip those nodes which locate in front of the last cs node*/
+				if(cs_sqnum > snod->sqnum)
+					continue;
+			}
+#endif
 			switch (snod->type) {
 			case UBIFS_REF_NODE: {
 				struct ubifs_ref_node *ref = snod->node;
@@ -702,7 +753,7 @@ int ubifs_consolidate_log(struct ubifs_info *c)
 		offs = ALIGN(offs, c->min_io_size);
 	}
 	destroy_done_tree(&done_tree);
-	vfree(buf);
+	kfree(buf);
 	if (write_lnum == c->lhead_lnum) {
 		ubifs_err("log is too full");
 		return -EINVAL;
@@ -724,7 +775,7 @@ out_scan:
 	ubifs_scan_destroy(sleb);
 out_free:
 	destroy_done_tree(&done_tree);
-	vfree(buf);
+	kfree(buf);
 	return err;
 }
 

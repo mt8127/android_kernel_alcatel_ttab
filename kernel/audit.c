@@ -372,8 +372,9 @@ static void audit_printk_skb(struct sk_buff *skb)
 	char *data = nlmsg_data(nlh);
 
 	if (nlh->nlmsg_type != AUDIT_EOE) {
-		if (printk_ratelimit())
+		if (printk_ratelimit()){
 			printk(KERN_NOTICE "type=%d %s\n", nlh->nlmsg_type, data);
+		}		
 		else
 			audit_log_lost("printk limit exceeded\n");
 	}

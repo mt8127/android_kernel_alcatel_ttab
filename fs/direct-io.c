@@ -710,11 +710,22 @@ out:
  * If that doesn't work out then we put the old page into the bio and add this
  * page to the dio instead.
  */
+#ifdef CONFIG_MTK_LCA_RAM_OPTIMIZE
+static int
+#else
 static inline int
+#endif
 submit_page_section(struct dio *dio, struct dio_submit *sdio, struct page *page,
 		    unsigned offset, unsigned len, sector_t blocknr,
 		    struct buffer_head *map_bh)
 {
+#ifdef FEATURE_STORAGE_PID_LOGGER
+	struct page_pid_logger *tmp_logger;
+	extern unsigned char *page_logger;
+	extern spinlock_t g_locker;
+	unsigned long page_index;
+	unsigned long flags;
+#endif
 	int ret = 0;
 
 	if (dio->rw & WRITE) {
@@ -722,6 +733,26 @@ submit_page_section(struct dio *dio, struct dio_submit *sdio, struct page *page,
 		 * Read accounting is performed in submit_bio()
 		 */
 		task_io_account_write(len);
+#ifdef FEATURE_STORAGE_PID_LOGGER
+		
+		if( page_logger && page) {
+			//#if defined(CONFIG_FLATMEM)
+			//page_index = (unsigned long)((page) - mem_map) ;
+			//#else
+			page_index = (unsigned long)(__page_to_pfn(page))- PHYS_PFN_OFFSET;
+			//#endif
+			tmp_logger =((struct page_pid_logger *)page_logger) + page_index;
+			spin_lock_irqsave(&g_locker, flags);
+			if( page_index < num_physpages) {
+				if( tmp_logger->pid1 == 0XFFFF)
+					tmp_logger->pid1 = current->pid;
+				else if( tmp_logger->pid1 != current->pid )
+					tmp_logger->pid2 = current->pid;
+			}
+			spin_unlock_irqrestore(&g_locker, flags);
+			//printk(KERN_INFO"submit_page_sction pid1:%u pid2:%u pfn:%d \n", tmp_logger->pid1, tmp_logger->pid2, page_index );
+		}
+#endif
 	}
 
 	/*
@@ -1283,6 +1314,7 @@ __blockdev_direct_IO(int rw, struct kiocb *iocb, struct inode *inode,
 	unsigned long nr_segs, get_block_t get_block, dio_iodone_t end_io,
 	dio_submit_t submit_io,	int flags)
 {
+    //printk("%s:%d:DENIS \n", __FUNCTION__, __LINE__);
 	/*
 	 * The block device state is needed in the end to finally
 	 * submit everything.  Since it's likely to be cache cold

@@ -195,3 +195,28 @@ extern acpi_handle usb_get_hub_port_acpi_handle(struct usb_device *hdev,
 static inline int usb_acpi_register(void) { return 0; };
 static inline void usb_acpi_unregister(void) { };
 #endif
+
+enum my_print_levels {
+	MY_PRINT_DBG = 0 ,
+	MY_PRINT_INFO = 1 ,
+	MY_PRINT_WARN = 2 ,
+	MY_PRINT_ERR = 3 ,
+} ;
+
+/* set cur accepted log level here */
+#define my_print_level (MY_PRINT_DBG)
+
+#define my_print_level_avail(level) (level >= my_print_level ? 1:0)
+
+#define MYDBG(fmt, args...) do {if(my_print_level_avail(MY_PRINT_DBG)){printk(KERN_WARNING "MTK_ICUSB [DBG], <%s(), %d> " fmt, __func__, __LINE__, ## args); }}while(0)
+#define MYINFO(fmt, args...) do {if(my_print_level_avail(MY_PRINT_INFO)){printk(KERN_WARNING "MTK_ICUSB [INFO], <%s(), %d> " fmt, __func__, __LINE__, ## args); }}while(0)
+#define MYWARN(fmt, args...) do {if(my_print_level_avail(MY_PRINT_WARN)){printk(KERN_WARNING "MTK_ICUSB [WARN], <%s(), %d> " fmt, __func__, __LINE__, ## args); }}while(0)
+#define MYERR(fmt, args...) do {if(my_print_level_avail(MY_PRINT_ERR)){printk(KERN_WARNING "MTK_ICUSB [ERR], <%s(), %d> " fmt, __func__, __LINE__, ## args); }}while(0)
+
+
+
+#ifdef CONFIG_MTK_DT_USB_SUPPORT
+#ifdef	CONFIG_PM_RUNTIME
+#define USB_WAKE_TIME 5	
+#endif
+#endif

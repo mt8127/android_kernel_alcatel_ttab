@@ -179,6 +179,10 @@ config CRYPTO_ABLK_HELPER_X86
 	depends on X86
 	select CRYPTO_CRYPTD
 
+config CRYPTO_ABLK_HELPER
+	tristate
+	select CRYPTO_CRYPTD
+
 config CRYPTO_GLUE_HELPER_X86
 	tristate
 	depends on X86
@@ -738,6 +742,7 @@ config CRYPTO_AES_ARM
 	depends on ARM
 	select CRYPTO_ALGAPI
 	select CRYPTO_AES
+	select CRYPTO_AES_ARM32_CE if (ARCH_MT6752)
 	help
 	  Use optimized AES assembler routines for ARM platforms.
 
@@ -757,6 +762,13 @@ config CRYPTO_AES_ARM
 
 	  See <http://csrc.nist.gov/encryption/aes/> for more information.
 
+config CRYPTO_AES_ARM32_CE
+	tristate "AES cipher using ARMv8 32bits Crypto Extensions"
+	select CRYPTO_ABLK_HELPER
+	help
+	  AES cipher using ARMv8 32bits Crypto Extensions (HW) to
+	  accelerate.
+	  
 config CRYPTO_ANUBIS
 	tristate "Anubis cipher algorithm"
 	select CRYPTO_ALGAPI

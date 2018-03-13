@@ -540,6 +540,21 @@ static inline bool mem_cgroup_is_root(struct mem_cgroup *memcg)
 	return (memcg == root_mem_cgroup);
 }
 
+#ifdef CONFIG_SWAP
+/* add_to_swap -> get_swap_page_by_memcg -> .. */
+bool memcg_is_root(struct page *page)
+{
+	struct page_cgroup *pc;
+
+	if (mem_cgroup_disabled())
+		return true;
+
+	pc = lookup_page_cgroup(page);
+
+	return mem_cgroup_is_root(pc->mem_cgroup);
+}
+#endif
+
 /* Writing them here to avoid exposing memcg's inner layout */
 #if defined(CONFIG_INET) && defined(CONFIG_MEMCG_KMEM)
 

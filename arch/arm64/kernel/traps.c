@@ -3,6 +3,7 @@
  *
  * Copyright (C) 1995-2009 Russell King
  * Copyright (C) 2012 ARM Ltd.
+ * Copyright (c) 2014, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -32,10 +33,12 @@
 #include <linux/syscalls.h>
 
 #include <asm/atomic.h>
+#include <asm/debug-monitors.h>
 #include <asm/traps.h>
 #include <asm/stacktrace.h>
 #include <asm/exception.h>
 #include <asm/system_misc.h>
+#include <asm/cacheflush.h>
 
 static const char *handler[]= {
 	"Synchronous Abort",
@@ -187,6 +190,7 @@ void show_stack(struct task_struct *tsk, unsigned long *sp)
 static int __die(const char *str, int err, struct thread_info *thread,
 		 struct pt_regs *regs)
 {
+	unsigned long sp, stack;
 	struct task_struct *tsk = thread->task;
 	static int die_counter;
 	int ret;
@@ -205,8 +209,13 @@ static int __die(const char *str, int err, struct thread_info *thread,
 		 TASK_COMM_LEN, tsk->comm, task_pid_nr(tsk), thread + 1);
 
 	if (!user_mode(regs) || in_interrupt()) {
-		dump_mem(KERN_EMERG, "Stack: ", regs->sp,
-			 THREAD_SIZE + (unsigned long)task_stack_page(tsk));
+		sp = regs->sp;
+		stack = (unsigned long)task_stack_page(tsk);
+		dump_mem(KERN_EMERG, "Stack: ", sp, ALIGN(sp, THREAD_SIZE));
+		if (sp < stack || (sp - stack) > THREAD_SIZE) {
+			printk(KERN_EMERG "Invalid sp[%lx] or stack address[%lx]\n", sp, stack);
+			dump_mem(KERN_EMERG, "Stack(backup) ", stack, THREAD_SIZE + stack);
+		}
 		dump_backtrace(regs, tsk);
 		dump_instr(KERN_EMERG, regs);
 	}
@@ -236,7 +245,8 @@ void die(const char *str, struct pt_regs *regs, int err)
 
 	bust_spinlocks(0);
 	add_taint(TAINT_DIE, LOCKDEP_NOW_UNRELIABLE);
-	raw_spin_unlock_irq(&die_lock);
+	/* keep preemption/irq disabled in KE flow to prevent context switch*/
+	//raw_spin_unlock_irq(&die_lock);
 	oops_exit();
 
 	if (in_interrupt())
@@ -256,22 +266,116 @@ void arm64_notify_die(const char *str, struct pt_regs *regs,
 		die(str, regs, err);
 }
 
+static LIST_HEAD(undef_hook);
+
+void register_undef_hook(struct undef_hook *hook)
+{
+	list_add(&hook->node, &undef_hook);
+}
+
+static int call_undef_hook(struct pt_regs *regs, unsigned int instr)
+{
+	struct undef_hook *hook;
+	int (*fn)(struct pt_regs *regs, unsigned int instr) = NULL;
+
+	list_for_each_entry(hook, &undef_hook, node)
+		if ((instr & hook->instr_mask) == hook->instr_val &&
+		    (regs->pstate & hook->pstate_mask) == hook->pstate_val)
+			fn = hook->fn;
+
+	return fn ? fn(regs, instr) : 1;
+}
+
+volatile static void __user *prev_undefinstr_pc=0;
+volatile static int prev_undefinstr_counter=0;
+volatile static unsigned long prev_undefinstr_curr=0;
+ 
 asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
 {
+	u32 instr;
 	siginfo_t info;
 	void __user *pc = (void __user *)instruction_pointer(regs);
+	struct thread_info *thread = current_thread_info();
 
-#ifdef CONFIG_COMPAT
 	/* check for AArch32 breakpoint instructions */
-	if (compat_user_mode(regs) && aarch32_break_trap(regs) == 0)
+	if (!aarch32_break_handler(regs))
 		return;
-#endif
+	if (user_mode(regs)) {
+		if (compat_thumb_mode(regs)) {
+			if (get_user(instr, (u16 __user *)pc))
+				goto die_sig;
+			if (is_wide_instruction(instr)) {
+				u32 instr2;
+				if (get_user(instr2, (u16 __user *)pc+1))
+					goto die_sig;
+				instr <<= 16;
+				instr |= instr2;
+			}
+		} else if (get_user(instr, (u32 __user *)pc)) {
+			goto die_sig;
+		}
+	} else {
+		/* kernel mode */
+		instr = *((u32 *)pc);
+	}
 
+	if (call_undef_hook(regs, instr) == 0)
+		return;
+
+die_sig:
 	if (show_unhandled_signals && unhandled_signal(current, SIGILL) &&
 	    printk_ratelimit()) {
 		pr_info("%s[%d]: undefined instruction: pc=%p\n",
 			current->comm, task_pid_nr(current), pc);
 		dump_instr(KERN_INFO, regs);
+	}
+
+	/* Place the SIGILL ICache Invalidate after the Debugger Undefined-Instruction Solution. */
+	if ((user_mode(regs)) || processor_mode(regs) == PSR_MODE_EL1h) {
+                /* Only do it for User-Space Application. */
+		pr_alert("USR_MODE / SVC_MODE Undefined Instruction Address curr:%p pc=%p:%p, compat: %s\n",
+			(void *)current, (void *)pc, (void *)prev_undefinstr_pc,
+			is_compat_task() ? "yes" : "no");
+		if ((prev_undefinstr_pc != pc) || (prev_undefinstr_curr != (unsigned long)current)) {
+			/* If the current process or program counter is changed......renew the counter. */
+			pr_alert("First Time Recovery curr:%p pc=%p:%p\n",
+				(void *)current, (void *)pc, (void *)prev_undefinstr_pc);
+			prev_undefinstr_pc = pc;
+			prev_undefinstr_curr = (unsigned long)current;
+			prev_undefinstr_counter = 0;
+			__flush_icache_all();
+			flush_cache_all();
+			/* 
+			 * undo cpu_excp to cancel nest_panic code, see entry.S
+			 */
+			if (!user_mode(regs)) {
+				thread->cpu_excp--;
+			}
+			return;
+		}
+		else if(prev_undefinstr_counter < 1) {
+			pr_alert("2nd Time Recovery curr:%p pc=%p:%p\n",
+				(void *)current, (void *)pc, (void *)prev_undefinstr_pc);
+			prev_undefinstr_counter++;
+			__flush_icache_all();
+			flush_cache_all();
+			/* 
+			 * undo cpu_excp to cancel nest_panic code, see entry.S
+			 */
+			if (!user_mode(regs)) {
+				thread->cpu_excp--;
+			}
+			return;
+		}
+		prev_undefinstr_counter++;
+		if(prev_undefinstr_counter >= 4) {
+			/* 2=first time SigILL,3=2nd time NE-SigILL,4=3rd time CoreDump-SigILL */
+			prev_undefinstr_pc = 0;
+			prev_undefinstr_curr = 0;
+			prev_undefinstr_counter = 0;
+		}
+		pr_alert("Go to ARM Notify Die curr:%p pc=%p:%p\n",
+			(void *)current, (void *)pc, (void *)prev_undefinstr_pc);
 	}
 
 	info.si_signo = SIGILL;
@@ -306,6 +410,19 @@ asmlinkage long do_ni_syscall(struct pt_regs *regs)
 	return sys_ni_syscall();
 }
 
+#ifdef CONFIG_MEDIATEK_SOLUTION
+static void (*async_abort_handler)(struct pt_regs *regs, void *);
+static void *async_abort_priv;
+
+int register_async_abort_handler(void (*fn)(struct pt_regs *regs, void *), void *priv)
+{
+	async_abort_handler = fn;
+	async_abort_priv = priv;
+
+	return 0;
+}
+#endif
+
 /*
  * bad_mode handles the impossible case in the exception vector.
  */
@@ -315,6 +432,15 @@ asmlinkage void bad_mode(struct pt_regs *regs, int reason, unsigned int esr)
 	void __user *pc = (void __user *)instruction_pointer(regs);
 	console_verbose();
 
+#ifdef CONFIG_MEDIATEK_SOLUTION
+	/*
+	 * reason is defined in entry.S, 3 means BAD_ERROR,
+	 * which would be triggered by async abort
+	 */
+	if ((reason == 3) && async_abort_handler) {
+		async_abort_handler(regs, async_abort_priv);
+	}
+#endif
 	pr_crit("Bad mode in %s handler detected, code 0x%08x\n",
 		handler[reason], esr);
 	__show_regs(regs);

@@ -1,0 +1,50 @@
+#mtk custom port
+
+
+#Debug version (BUILD := debug not eatten by kbuild)
+ccflags-y += -DDEBUG
+
+#Move user ump include to kernel source code
+ccflags-y += -I$(DRIVER_DIR)/../ump_include/ump
+
+#include mtk kernel header files
+#ccflags-y += \
+#    -I$(MTK_PATH_PLATFORM)/core/include/mach \
+#    -I$(MTK_PATH_SOURCE)/include/linux
+ccflags-y += \
+	-I$(srctree)/arch/arm/mach-mt8127/include/mach \
+    -I$(srctree)/include/linux \
+    -I$(srctree)/arch/arm/mach-mt8127/gpu/mali/mali/linux/license/gpl
+
+
+#Add MTK custom source code
+ccflags-y += -I$(DRIVER_DIR)/../../mediatek
+mali-y    += ../../mediatek/mtk_mali_kernel.o
+#mali-y    += ../../mediatek/mtk_mali_trace.o
+
+ccflags-y += -DMALI_FAKE_PLATFORM_DEVICE
+
+#Add function trace functionality
+#ccflags-y += -finstrument-functions
+#mali-y += platform/$(TARGET_PLATFORM)/mtk_ptrace.c
+
+mali-y += platform/platform.o
+mali-y += platform/platform_pmm.o
+
+
+#MTK_DEBUG
+ccflags-y += -I$(DRIVER_DIR)/mtk_common
+
+#Temp remove this for Kernel version update
+#mali-y += mtk_common/mtk_mem_record.o
+#mali-$(MTK_DEBUG) += mtk_common/mtk_debug.o
+#mali-$(MTK_DEBUG_PROC_PRINT) += mtk_common/mtk_pp.o
+
+#Use this to set PP num and pll 
+#ifdef MTK_NR_MALI_PP
+#ccflags-y += -DMTK_NR_MALI_PP=$(MTK_NR_MALI_PP)
+#endif
+
+#ifeq ($(MTK_MALI_UNIV), yes)
+#ccflags-y += -DMTK_MALI_UNIV
+#endif

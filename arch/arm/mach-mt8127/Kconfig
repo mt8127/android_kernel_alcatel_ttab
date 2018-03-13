@@ -1,0 +1,43 @@
+if ARCH_MT8127
+
+menu "MT8127 Board Support Package"
+
+choice
+	bool "Board"
+
+config MT8127_FPGA
+	bool "MT8127 FPGA"
+	select ARM_L1_CACHE_SHIFT_6
+	help
+	  Select if you are using the FPGA board.
+
+config MT8127_EVB_BOARD
+	bool "MT8127 EVB BOARD"
+	select ARM_L1_CACHE_SHIFT_6
+	help
+	 Select if you are using an EVB board.
+
+endchoice
+
+config MT8127_FPGA_CA7
+	tristate "MT8127 FPGA CA7" 
+	depends on MT8127_FPGA
+	default n
+	help
+	    Select if you are using the CA7 FPGA board.
+
+config MAX_DRAM_SIZE_SUPPORT
+	hex "The maximum size of the DRAM can be supported in the kernel"
+	default 0x10000000
+	depends on ARCH_MT8127
+	help
+		Define the maximum size of the kernel can be supported.
+	        If will modify the memory size if it size is smaller than 
+                the memory size passed by the boot loader to the MAX_DRAM_SIZE_SUPPORT.
+   		Notice that the maximum DRAM size is including the memory size
+	        reserved for the modem and the PMEM.
+
+endmenu
+
+
+endif

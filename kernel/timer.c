@@ -49,6 +49,8 @@
 #include <asm/timex.h>
 #include <asm/io.h>
 
+#include <linux/mt_sched_mon.h>
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/timer.h>
 
@@ -1114,7 +1116,9 @@ static void call_timer_fn(struct timer_list *timer, void (*fn)(unsigned long),
 	lock_map_acquire(&lockdep_map);
 
 	trace_timer_expire_entry(timer);
+    mt_trace_sft_start(fn);
 	fn(data);
+    mt_trace_sft_end(fn);
 	trace_timer_expire_exit(timer);
 
 	lock_map_release(&lockdep_map);

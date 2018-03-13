@@ -45,6 +45,9 @@
 #include <linux/crc32.h>
 #include <linux/err.h>
 #include "ubi.h"
+#ifdef CONFIG_PWR_LOSS_MTK_SPOH
+#include <mach/power_loss_test.h>
+#endif
 
 /* Number of physical eraseblocks reserved for atomic LEB change operation */
 #define EBA_RESERVED_PEBS 1
@@ -76,7 +79,11 @@ unsigned long long ubi_next_sqnum(struct ubi_device *ubi)
  * This function returns compatibility flags for an internal volume. User
  * volumes have no compatibility flags, so %0 is returned.
  */
+#ifdef CONFIG_BLB
+int ubi_get_compat(const struct ubi_device *ubi, int vol_id)
+#else
 static int ubi_get_compat(const struct ubi_device *ubi, int vol_id)
+#endif
 {
 	if (vol_id == UBI_LAYOUT_VOLUME_ID)
 		return UBI_LAYOUT_VOLUME_COMPAT;
@@ -339,6 +346,44 @@ int ubi_eba_unmap_leb(struct ubi_device *ubi, struct ubi_volume *vol,
 		goto out_unlock;
 
 	dbg_eba("erase LEB %d:%d, PEB %d", vol_id, lnum, pnum);
+#ifdef MTK_TMP_DEBUG_LOG
+	ubi_msg("erase LEB %d:%d, PEB %d", vol_id, lnum, pnum);
+#endif
+#ifdef MTK_IPOH_SUPPORT
+	if(vol_id == 2 && ubi->ipoh_ops == 0) {
+		struct ubi_vid_hdr *vid_hdr;
+		struct ubi_wl_entry *e = ubi->lookuptbl[pnum];
+		unsigned long long int old_ec = e->ec;
+
+		err = sync_erase(ubi, e, 0);
+		if(err) {
+			ubi_err("erase PEB %d fail\n", pnum);
+			goto skip_ipoh;
+		} 
+		e->ec = old_ec;
+		vid_hdr = ubi_zalloc_vid_hdr(ubi, GFP_NOFS);
+		if (!vid_hdr) {
+			ubi_err("malloc vid_hdr fail\n");
+			goto skip_ipoh;
+		} 
+
+		vid_hdr->vol_type = UBI_VID_DYNAMIC;
+		vid_hdr->sqnum = cpu_to_be64(next_sqnum(ubi));
+		vid_hdr->vol_id = cpu_to_be32(vol_id);
+		vid_hdr->lnum = cpu_to_be32(lnum);
+		vid_hdr->compat = ubi_get_compat(ubi, vol_id);
+		vid_hdr->data_pad = cpu_to_be32(vol->data_pad);
+		err = ubi_io_write_vid_hdr(ubi, pnum, vid_hdr);
+		if (err) {
+			ubi_err("failed to write VID header to LEB %d:%d, PEB %d",
+					vol_id, lnum, pnum);
+			goto skip_ipoh;
+		}
+		goto out_unlock;
+	}
+skip_ipoh:
+	ubi->ipoh_ops = 0;
+#endif
 
 	down_read(&ubi->fm_sem);
 	vol->eba_tbl[lnum] = UBI_LEB_UNMAPPED;
@@ -580,6 +625,353 @@ write_error:
 	goto retry;
 }
 
+#ifdef CONFIG_BLB
+extern u32 mtk_nand_paired_page_transfer(u32, bool);
+int blb_get_startpage(void)
+{
+	int _start =0, _start0, _start1;
+	_start0 = mtk_nand_paired_page_transfer(0, false);
+	_start1 = mtk_nand_paired_page_transfer(1, false);
+	if(_start0 < _start1)
+		_start = _start1;
+	else
+		_start = _start0;
+	return _start+1;
+}
+int blb_renew_leb(struct ubi_device *ubi, int lnum)
+{
+	struct ubi_volume *backup_vol;
+	int err, old_pnum, backup_pnum, another_pnum;
+	int _start =0;
+	int a_lnum = (lnum+1)%2, backup_tries=0;
+	struct ubi_vid_hdr *vid_hdr;
+
+	backup_vol = ubi->volumes[vol_id2idx(ubi, UBI_BACKUP_VOLUME_ID)];
+	backup_pnum = backup_vol->eba_tbl[lnum];
+	another_pnum = backup_vol->eba_tbl[a_lnum];
+
+	old_pnum=backup_pnum;
+	_start = blb_get_startpage();
+
+peb_retry:
+	vid_hdr = ubi_zalloc_vid_hdr(ubi, GFP_NOFS);
+	if (!vid_hdr) {
+		return -ENOMEM;
+	}
+	vid_hdr->vol_type = UBI_VID_DYNAMIC;
+	vid_hdr->sqnum = cpu_to_be64(ubi_next_sqnum(ubi));
+	vid_hdr->vol_id = cpu_to_be32(UBI_BACKUP_VOLUME_ID);
+	vid_hdr->lnum = cpu_to_be32(lnum);
+	vid_hdr->compat = ubi_get_compat(ubi, UBI_BACKUP_VOLUME_ID);
+	vid_hdr->data_pad = cpu_to_be32(backup_vol->data_pad);
+
+	backup_pnum = ubi_wl_get_peb(ubi);
+	if (backup_pnum < 0) {
+		ubi_free_vid_hdr(ubi, vid_hdr);
+		return backup_pnum;
+	}
+
+	if(another_pnum != UBI_LEB_UNMAPPED) {
+		uint32_t crc;
+		struct ubi_blb_spare *blb_spare = (struct ubi_blb_spare *)ubi->oobbuf;
+		blb_spare->num = cpu_to_be16(1);
+		blb_spare->pnum = cpu_to_be16(backup_pnum);
+		blb_spare->lnum = cpu_to_be16(lnum);
+		blb_spare->vol_id = cpu_to_be32(UBI_BACKUP_VOLUME_ID);
+		blb_spare->page = cpu_to_be16(1);
+		blb_spare->sqnum = cpu_to_be64(ubi_next_sqnum(ubi));
+		crc = crc32(UBI_CRC32_INIT, blb_spare, sizeof(struct ubi_blb_spare)-4);
+		blb_spare->crc = cpu_to_be32(crc);
+
+		sprintf(ubi->databuf, "VIDVIDVID");
+		if((ubi->peb_size-ubi->next_offset[a_lnum]) < ubi->mtd->writesize) {
+			ubi_msg("no space on backup %d peb %d\n", a_lnum, another_pnum);
+		} else {
+			err = ubi_io_write_oob(ubi, ubi->databuf, ubi->oobbuf, another_pnum, ubi->next_offset[a_lnum]);
+			ubi_msg("backup[1] 'backup volume' %d:%d to %d:%d", backup_pnum, 1, another_pnum, 
+				ubi->next_offset[a_lnum]/ubi->mtd->writesize);
+			if (err) {
+				ubi_warn("failed to write to LEB 0x%x:%d, PEB %d",
+						UBI_BACKUP_VOLUME_ID, 0, another_pnum);
+				ubi_free_vid_hdr(ubi, vid_hdr);
+				return err;
+			}
+			ubi->next_offset[a_lnum] += ubi->mtd->writesize;
+		}
+	}
+	//ubi_msg("map backup :%d", backup_pnum);
+	err = ubi_io_write_vid_hdr(ubi, backup_pnum, vid_hdr);
+	ubi_free_vid_hdr(ubi, vid_hdr);
+	if (err) {
+		ubi_warn("failed to write VID header to LEB 0x%x:%d, PEB %d",
+				UBI_BACKUP_VOLUME_ID, 0, backup_pnum);
+		if(err != -EIO || !ubi->bad_allowed)
+		{
+			ubi_ro_mode(ubi);
+			return err;
+		}
+		else
+		{
+			err = ubi_wl_put_peb(ubi, UBI_BACKUP_VOLUME_ID, lnum, backup_pnum, 1);
+			if (err || ++backup_tries > UBI_IO_RETRIES) {
+				ubi_ro_mode(ubi);
+				return err;
+			}
+			ubi_msg("try another backup PEB");
+			goto peb_retry;
+		}
+	}
+	ubi->next_offset[lnum] = _start * ubi->mtd->writesize; //skip paired page of 0/1
+	ubi_msg("blb write start from page %d:%d\n", backup_pnum, _start);
+	backup_vol->eba_tbl[lnum] = backup_pnum;
+
+	if(old_pnum != UBI_LEB_UNMAPPED) {
+		err = ubi_wl_put_peb(ubi, UBI_BACKUP_VOLUME_ID, lnum, old_pnum, 0);
+		if(err)
+			return err;
+	}
+	return backup_pnum;
+
+}
+int blb_init_volume(struct ubi_device *ubi)
+{
+	int err;
+	err = blb_renew_leb(ubi, 0);
+	if(err<0)
+		return err;
+	err = blb_renew_leb(ubi, 1);
+	if(err<0)
+		return err;
+	return 0;
+}
+int blb_get_peb(struct ubi_device *ubi, int lnum, int renew)
+{
+	struct ubi_volume *backup_vol;
+	int err, backup_pnum;
+
+	backup_vol = ubi->volumes[vol_id2idx(ubi, UBI_BACKUP_VOLUME_ID)];
+	if(backup_vol == NULL || backup_vol->eba_tbl == NULL)
+		return -1;
+	if(backup_vol->eba_tbl[0] == UBI_LEB_UNMAPPED && 
+	   backup_vol->eba_tbl[1] == UBI_LEB_UNMAPPED) {
+		err = blb_init_volume(ubi);
+		if(err)
+			return err;
+	}
+	backup_pnum = backup_vol->eba_tbl[lnum];
+	if(backup_pnum == UBI_LEB_UNMAPPED)
+		renew = 1;
+
+	if(renew) {
+		int a_lnum = (lnum+1)%2;
+		ubi_msg("leb_write_lock %d %d:%d\n", __LINE__, UBI_BACKUP_VOLUME_ID, a_lnum);
+		leb_write_lock(ubi, UBI_BACKUP_VOLUME_ID, a_lnum);
+		backup_pnum = blb_renew_leb(ubi, lnum);
+		leb_write_unlock(ubi, UBI_BACKUP_VOLUME_ID, a_lnum);
+		if(backup_pnum < 0)
+			return backup_pnum;
+	}
+	return backup_pnum;
+}
+int blb_record_page1(struct ubi_device *ubi, int pnum,
+			 struct ubi_vid_hdr *vidh, int work)
+{
+	int err, backup_pnum, renew=0, backup_tries=0;
+	struct ubi_blb_spare *blb_spare = (struct ubi_blb_spare *)ubi->oobbuf;
+	int vol_id = be32_to_cpu(vidh->vol_id);
+	int lnum = be32_to_cpu(vidh->lnum);
+	uint32_t crc;
+
+#ifdef MTK_IPOH_SUPPORT
+	if(vol_id == 2 && ubi->ipoh_ops == 1)
+		return 0;
+#endif
+	if(ubi->scaning == 1)
+		return 0;
+	if(work==1) {
+		if(mutex_trylock(&ubi->blb_mutex) == 0) {
+			ubi_msg("mutex_trylock err");
+			dump_stack();
+			return -EIO;
+		}
+	} else {
+		mutex_lock(&ubi->blb_mutex);
+	}
+	
+	ubi_msg("leb_write_lock %d %d:%d\n", __LINE__, UBI_BACKUP_VOLUME_ID, 1);
+	leb_write_lock(ubi, UBI_BACKUP_VOLUME_ID, 1);
+
+blb_vid_retry:
+	backup_pnum = blb_get_peb(ubi, 1, renew);
+	if(backup_pnum<0) {
+		leb_write_unlock(ubi, UBI_BACKUP_VOLUME_ID, 1);
+		mutex_unlock(&ubi->blb_mutex);
+		return err;
+	}
+	// check if enough free pages
+	if((ubi->peb_size-ubi->next_offset[1]) < ubi->mtd->writesize*10 || ubi->leb_scrub[1]==1) {
+		dbg_eba("not enough free space(%d) to backup(%d)", 
+			(ubi->peb_size-ubi->next_offset[1]), ubi->mtd->writesize);
+		ubi->leb_scrub[1] = 0;
+		renew = 1;
+		goto blb_vid_retry;
+	}
+	blb_spare->num = cpu_to_be16(1);
+	blb_spare->pnum = cpu_to_be16(pnum);
+	blb_spare->lnum = cpu_to_be16(lnum);
+	blb_spare->vol_id = cpu_to_be32(vol_id);
+	blb_spare->page = cpu_to_be16(1);
+	blb_spare->sqnum = cpu_to_be64(ubi_next_sqnum(ubi));
+	crc = crc32(UBI_CRC32_INIT, blb_spare, sizeof(struct ubi_blb_spare)-4);
+	blb_spare->crc = cpu_to_be32(crc);
+
+	sprintf(ubi->databuf, "VIDVIDVID");
+
+	dbg_eba("write backup page to leb 0x%x:%d, PEB %d, Offset 0x%x",UBI_BACKUP_VOLUME_ID, 1, backup_pnum,ubi->next_offset[1]);
+	err = ubi_io_write_oob(ubi, ubi->databuf, ubi->oobbuf, backup_pnum, ubi->next_offset[1]);
+	ubi_msg("backup[1] %d:%d to %d:%d, num %d", pnum, 1, backup_pnum,
+			ubi->next_offset[1]/ubi->mtd->writesize, 1);
+	if (err) {
+		ubi_warn("failed to write to LEB 0x%x:%d, PEB %d",
+				UBI_BACKUP_VOLUME_ID, 1, backup_pnum);
+		if(err != -EIO || !ubi->bad_allowed)
+		{
+			ubi_ro_mode(ubi);
+			leb_write_unlock(ubi, UBI_BACKUP_VOLUME_ID, 1);
+			mutex_unlock(&ubi->blb_mutex);
+			return err;
+		}
+		else
+		{
+			err = ubi_wl_put_peb(ubi, UBI_BACKUP_VOLUME_ID, lnum, backup_pnum, 1);
+			if (err || ++backup_tries > UBI_IO_RETRIES) {
+				ubi_ro_mode(ubi);
+				leb_write_unlock(ubi, UBI_BACKUP_VOLUME_ID, 1);
+				mutex_unlock(&ubi->blb_mutex);
+				return err;
+			}
+			ubi_msg("try another backup PEB");
+			renew = 1;
+			goto blb_vid_retry;
+		}
+	}
+	ubi->next_offset[1] += ubi->mtd->writesize;
+	leb_write_unlock(ubi, UBI_BACKUP_VOLUME_ID, 1);
+	mutex_unlock(&ubi->blb_mutex);
+	return 0;
+}
+
+int blb_record_share(struct ubi_device *ubi, int vol_id, int lnum, int pnum, int offset, int len)
+{
+	int page_start, page_no, backup_pnum;
+	int i, backup_cnt = 0, had_backup_cnt = 0;
+	int num, backup_tries = 0;
+	struct ubi_blb_spare *blb_spare = (struct ubi_blb_spare *)ubi->oobbuf;
+	int renew = 0;
+
+	dbg_eba("write %d pages(%d) at page %d of PEB %d",
+			len/ubi->mtd->writesize, len, (offset+ubi->leb_start)/ubi->mtd->writesize, pnum);
+
+	page_start = (offset+ubi->leb_start)/ubi->mtd->writesize;
+	for(i=0 ; i<(len/ubi->mtd->writesize) ; i++) {
+		page_no = mtk_nand_paired_page_transfer(page_start+i, true);
+		if(page_no != (page_start+i)) {
+			if(page_no >= page_start)
+				break;  // not at risk, stop backup
+			backup_cnt++;
+		}
+	}
+	if(backup_cnt > 0) {
+		dbg_eba("needs to backup %d LSB pages", backup_cnt);
+		mutex_lock(&ubi->blb_mutex);
+		ubi_msg("leb_write_lock %d %d:%d\n", __LINE__, UBI_BACKUP_VOLUME_ID, 0);
+		leb_write_lock(ubi, UBI_BACKUP_VOLUME_ID, 0);
+
+retry_backup_leb:
+		backup_pnum = blb_get_peb(ubi, 0, renew);
+		if(backup_pnum < 0) {
+			leb_write_unlock(ubi, UBI_BACKUP_VOLUME_ID, 0);
+			mutex_unlock(&ubi->blb_mutex);
+			return backup_pnum;
+		}
+		// check if enough free pages
+		if((ubi->peb_size-ubi->next_offset[0]) < (backup_cnt+10)*ubi->mtd->writesize || ubi->leb_scrub[0] == 1) {
+			if(ubi->leb_scrub)
+				dbg_eba("blb scrib");
+			else
+				dbg_eba("not enough free space(%d) to backup(%d)", 
+						(ubi->peb_size-ubi->next_offset[0]), backup_cnt*ubi->mtd->writesize);
+			ubi->leb_scrub[0] = 0;
+			renew = 1;
+			goto retry_backup_leb;
+		}
+
+		blb_spare->pnum = cpu_to_be16(pnum);
+		blb_spare->lnum = cpu_to_be16(lnum);
+		blb_spare->vol_id = cpu_to_be32(vol_id);
+		blb_spare->sqnum = cpu_to_be64(ubi_next_sqnum(ubi));
+		for(i=0 ; i<(len/ubi->mtd->writesize) ; i++) {
+			uint32_t crc;
+			int err;
+			page_no = mtk_nand_paired_page_transfer(page_start+i, true);
+			if(backup_cnt == had_backup_cnt)
+				break;
+
+			if(page_no == page_start+i) //skip lsb
+				continue;
+
+			had_backup_cnt++;
+			err = ubi_io_read_oob(ubi, ubi->databuf, NULL ,pnum, page_no * ubi->mtd->writesize);
+			if (err && err != UBI_IO_BITFLIPS) {
+				ubi_warn("failed to read from LEB %d:%d, PEB %d",
+						vol_id, lnum, pnum);
+				leb_write_unlock(ubi, UBI_BACKUP_VOLUME_ID, 0);
+				mutex_unlock(&ubi->blb_mutex);
+				return err;
+			}
+
+			num = (had_backup_cnt==backup_cnt) ? backup_cnt : 0;
+			blb_spare->num = cpu_to_be16(num);
+			blb_spare->page = cpu_to_be16(page_no);
+			crc = crc32(UBI_CRC32_INIT, blb_spare, sizeof(struct ubi_blb_spare)-4);
+			blb_spare->crc = cpu_to_be32(crc);
+			dbg_eba("write backup page to leb 0x%x:%d, PEB %d, Offset 0x%x",UBI_BACKUP_VOLUME_ID, 0, backup_pnum,ubi->next_offset[0]);
+			err = ubi_io_write_oob(ubi, ubi->databuf, ubi->oobbuf, backup_pnum, ubi->next_offset[0]);
+			ubi_msg("backup[0] %d:%d to %d:%d, num %d", pnum, page_no, backup_pnum,
+					ubi->next_offset[0]/ubi->mtd->writesize, num);
+			if (err) {
+				ubi_warn("failed to write to LEB 0x%x:%d, PEB %d",
+						UBI_BACKUP_VOLUME_ID, 0, backup_pnum);
+				if(err != -EIO || !ubi->bad_allowed)
+				{
+					ubi_ro_mode(ubi);
+					leb_write_unlock(ubi, UBI_BACKUP_VOLUME_ID, 0);
+					mutex_unlock(&ubi->blb_mutex);
+					return err;
+				}
+				else
+				{
+					err = ubi_wl_put_peb(ubi, UBI_BACKUP_VOLUME_ID, lnum, backup_pnum, 1);
+					if (err || ++backup_tries > UBI_IO_RETRIES) {
+						ubi_ro_mode(ubi);
+						leb_write_unlock(ubi, UBI_BACKUP_VOLUME_ID, 0);
+						mutex_unlock(&ubi->blb_mutex);
+						return err;
+					}
+					ubi_msg("try another backup PEB");
+					renew = 1;
+					goto retry_backup_leb;
+				}
+			}
+			ubi->next_offset[0] += ubi->mtd->writesize;
+		}
+		leb_write_unlock(ubi, UBI_BACKUP_VOLUME_ID, 0);
+		mutex_unlock(&ubi->blb_mutex);
+	}
+	return 0;
+}
+#endif
+
 /**
  * ubi_eba_write_leb - write data to dynamic volume.
  * @ubi: UBI device description object
@@ -609,8 +1001,28 @@ int ubi_eba_write_leb(struct ubi_device *ubi, struct ubi_volume *vol, int lnum,
 
 	pnum = vol->eba_tbl[lnum];
 	if (pnum >= 0) {
-		dbg_eba("write %d bytes at offset %d of LEB %d:%d, PEB %d",
+		dbg_eba("write %d bytes at offset 0x%x of LEB %d:%d, PEB %d",
 			len, offset, vol_id, lnum, pnum);
+#ifdef MTK_TMP_DEBUG_LOG
+		ubi_msg("write %d bytes at offset 0x%x of LEB %d:%d, PEB %d",
+			len, offset, vol_id, lnum, pnum);
+#endif
+
+#ifdef CONFIG_BLB
+#ifdef MTK_IPOH_SUPPORT
+		if(vol_id != 2)
+#endif
+		{
+		lockdep_off();
+		err = blb_record_share(ubi, vol_id, lnum, pnum, offset, len);
+		lockdep_on();
+		if(err)
+		{
+			leb_write_unlock(ubi, vol_id, lnum);
+			return err;
+		}
+		}
+#endif
 
 		err = ubi_io_write_data(ubi, buf, pnum, offset, len);
 		if (err) {
@@ -652,6 +1064,10 @@ retry:
 
 	dbg_eba("write VID hdr and %d bytes at offset %d of LEB %d:%d, PEB %d",
 		len, offset, vol_id, lnum, pnum);
+#ifdef MTK_TMP_DEBUG_LOG
+	ubi_msg("write VID hdr and %d bytes at offset %d of LEB %d:%d, PEB %d",
+		len, offset, vol_id, lnum, pnum);
+#endif
 
 	err = ubi_io_write_vid_hdr(ubi, pnum, vid_hdr);
 	if (err) {
@@ -667,6 +1083,10 @@ retry:
 				 len, offset, vol_id, lnum, pnum);
 			goto write_error;
 		}
+#ifdef MTK_IPOH_SUPPORT
+	} else if(vol_id == 2) {
+		ubi_wl_move_pg_to_used(ubi, pnum);
+#endif
 	}
 
 	down_read(&ubi->fm_sem);
@@ -891,6 +1311,9 @@ retry:
 
 	dbg_eba("change LEB %d:%d, PEB %d, write VID hdr to PEB %d",
 		vol_id, lnum, vol->eba_tbl[lnum], pnum);
+#ifdef CONFIG_PWR_LOSS_MTK_SPOH
+    PL_RESET_ON_CASE("NAND", "LEB_Change1");
+#endif
 
 	err = ubi_io_write_vid_hdr(ubi, pnum, vid_hdr);
 	if (err) {
@@ -898,7 +1321,14 @@ retry:
 			 vol_id, lnum, pnum);
 		goto write_error;
 	}
+#ifdef CONFIG_PWR_LOSS_MTK_SPOH
+    PL_RESET_ON_CASE("NAND", "LEB_Change2");
+#endif
 
+#ifdef MTK_TMP_DEBUG_LOG
+	ubi_msg("change LEB %d:%d, PEB %d to PEB %d with len %d",
+		vol_id, lnum, vol->eba_tbl[lnum], pnum, len);
+#endif
 	err = ubi_io_write_data(ubi, buf, pnum, 0, len);
 	if (err) {
 		ubi_warn("failed to write %d bytes of data to PEB %d",
@@ -987,7 +1417,7 @@ static int is_error_sane(int err)
  *   o a negative error code in case of failure.
  */
 int ubi_eba_copy_leb(struct ubi_device *ubi, int from, int to,
-		     struct ubi_vid_hdr *vid_hdr)
+		     struct ubi_vid_hdr *vid_hdr, int do_wl)
 {
 	int err, vol_id, lnum, data_size, aldata_size, idx;
 	struct ubi_volume *vol;
@@ -1084,6 +1514,9 @@ int ubi_eba_copy_leb(struct ubi_device *ubi, int from, int to,
 		aldata_size = data_size =
 			ubi_calc_data_len(ubi, ubi->peb_buf, data_size);
 
+#ifdef MTK_TMP_DEBUG_LOG
+	ubi_msg("copy LEB %d:%d, PEB %d to PEB %d, size %d", vol_id, lnum, from, to, data_size);
+#endif
 	cond_resched();
 	crc = crc32(UBI_CRC32_INIT, ubi->peb_buf, data_size);
 	cond_resched();
@@ -1101,7 +1534,11 @@ int ubi_eba_copy_leb(struct ubi_device *ubi, int from, int to,
 	}
 	vid_hdr->sqnum = cpu_to_be64(ubi_next_sqnum(ubi));
 
+#ifdef CONFIG_BLB
+	err = ubi_io_write_vid_hdr_blb(ubi, to, vid_hdr);
+#else
 	err = ubi_io_write_vid_hdr(ubi, to, vid_hdr);
+#endif
 	if (err) {
 		if (err == -EIO)
 			err = MOVE_TARGET_WR_ERR;
@@ -1130,6 +1567,15 @@ int ubi_eba_copy_leb(struct ubi_device *ubi, int from, int to,
 				err = MOVE_TARGET_WR_ERR;
 			goto out_unlock_buf;
 		}
+//MTK start: count wl/scrubbing size
+		if(do_wl == 1) {
+			ubi->wl_count++;
+			ubi->wl_size += aldata_size;
+		} else if(do_wl == 2) {
+			ubi->scrub_count++;
+			ubi->scrub_size += aldata_size;
+		}
+//MTK end
 
 		cond_resched();
 

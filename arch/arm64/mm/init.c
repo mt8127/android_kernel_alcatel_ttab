@@ -30,12 +30,15 @@
 #include <linux/memblock.h>
 #include <linux/sort.h>
 #include <linux/of_fdt.h>
+#include <linux/dma-mapping.h>
+#include <linux/mrdump.h>
 
 #include <asm/prom.h>
 #include <asm/sections.h>
 #include <asm/setup.h>
 #include <asm/sizes.h>
 #include <asm/tlb.h>
+#include <mach/mtk_memcfg.h>
 
 #include "mm.h"
 
@@ -67,22 +70,22 @@ static int __init early_initrd(char *p)
 }
 early_param("initrd", early_initrd);
 
-#define MAX_DMA32_PFN ((4UL * 1024 * 1024 * 1024) >> PAGE_SHIFT)
-
 static void __init zone_sizes_init(unsigned long min, unsigned long max)
 {
 	struct memblock_region *reg;
 	unsigned long zone_size[MAX_NR_ZONES], zhole_size[MAX_NR_ZONES];
-	unsigned long max_dma32 = min;
+	unsigned long max_dma = min;
 
 	memset(zone_size, 0, sizeof(zone_size));
 
-#ifdef CONFIG_ZONE_DMA32
 	/* 4GB maximum for 32-bit only capable devices */
-	max_dma32 = max(min, min(max, MAX_DMA32_PFN));
-	zone_size[ZONE_DMA32] = max_dma32 - min;
-#endif
-	zone_size[ZONE_NORMAL] = max - max_dma32;
+	if (IS_ENABLED(CONFIG_ZONE_DMA)) {
+		unsigned long max_dma_phys =
+			(unsigned long)dma_to_phys(NULL, DMA_BIT_MASK(32) + 1);
+		max_dma = max(min, min(max, max_dma_phys >> PAGE_SHIFT));
+		zone_size[ZONE_DMA] = max_dma - min;
+	}
+	zone_size[ZONE_NORMAL] = max - max_dma;
 
 	memcpy(zhole_size, zone_size, sizeof(zhole_size));
 
@@ -92,15 +95,15 @@ static void __init zone_sizes_init(unsigned long min, unsigned long max)
 
 		if (start >= max)
 			continue;
-#ifdef CONFIG_ZONE_DMA32
-		if (start < max_dma32) {
-			unsigned long dma_end = min(end, max_dma32);
-			zhole_size[ZONE_DMA32] -= dma_end - start;
+
+		if (IS_ENABLED(CONFIG_ZONE_DMA) && start < max_dma) {
+			unsigned long dma_end = min(end, max_dma);
+			zhole_size[ZONE_DMA] -= dma_end - start;
 		}
-#endif
-		if (end > max_dma32) {
+
+		if (end > max_dma) {
 			unsigned long normal_end = min(end, max);
-			unsigned long normal_start = max(start, max_dma32);
+			unsigned long normal_start = max(start, max_dma);
 			zhole_size[ZONE_NORMAL] -= normal_end - normal_start;
 		}
 	}
@@ -109,9 +112,11 @@ static void __init zone_sizes_init(unsigned long min, unsigned long max)
 }
 
 #ifdef CONFIG_HAVE_ARCH_PFN_VALID
+#define PFN_MASK ((1UL << (64 - PAGE_SHIFT)) - 1)
+
 int pfn_valid(unsigned long pfn)
 {
-	return memblock_is_memory(pfn << PAGE_SHIFT);
+	return (pfn & PFN_MASK) == pfn && memblock_is_memory(pfn << PAGE_SHIFT);
 }
 EXPORT_SYMBOL(pfn_valid);
 #endif
@@ -131,6 +136,34 @@ static void arm64_memory_present(void)
 }
 #endif
 
+static bool arm64_memblock_steal_permitted = true;
+
+phys_addr_t __init arm64_memblock_steal(phys_addr_t size, phys_addr_t align)
+{
+	phys_addr_t phys;
+
+	BUG_ON(!arm64_memblock_steal_permitted);
+
+	phys = memblock_alloc_base(size, align, MEMBLOCK_ALLOC_ANYWHERE);
+	memblock_free(phys, size);
+	memblock_remove(phys, size);
+	if (phys) {
+		MTK_MEMCFG_LOG_AND_PRINTK(KERN_ALERT"[PHY layout]%ps   :   0x%08llx - 0x%08llx (0x%08llx)\n",
+			__builtin_return_address(0), (unsigned long long)phys, 
+		(unsigned long long)phys + size - 1,
+		(unsigned long long)size);
+	}
+
+	return phys;
+}
+
+#ifdef CONFIG_MTK_COMBO_CHIP
+extern void mtk_wcn_consys_memory_reserve(void);
+void __weak mtk_wcn_consys_memory_reserve(void)
+{
+    printk(KERN_ERR"weak reserve function: %s", __FUNCTION__);
+}
+#endif
 void __init arm64_memblock_init(void)
 {
 	u64 *reserve_map, base, size;
@@ -172,7 +205,28 @@ void __init arm64_memblock_init(void)
 			break;
 		memblock_reserve(base, size);
 	}
+#ifdef CONFIG_MTK_ECCCI_DRIVER
+{
+  extern void ccci_md_mem_reserve(void);
+	ccci_md_mem_reserve();
+}
+#endif
+ 
+#ifdef CONFIG_MTK_COMBO_CHIP
+{
+	mtk_wcn_consys_memory_reserve();
+}
+#endif
 
+#if defined(CONFIG_MTK_RAM_CONSOLE_USING_DRAM)
+	memblock_reserve(CONFIG_MTK_RAM_CONSOLE_DRAM_ADDR, CONFIG_MTK_RAM_CONSOLE_DRAM_SIZE);
+#endif
+        mrdump_reserve_memory();
+
+        mrdump_mini_reserve_memory();
+	
+	arm64_memblock_steal_permitted = false;
+	early_init_fdt_scan_reserved_mem();
 	memblock_allow_resize();
 	memblock_dump_all();
 }
@@ -338,7 +392,7 @@ void __init mem_init(void)
 #define MLM(b, t) b, t, ((t) - (b)) >> 20
 #define MLK_ROUNDUP(b, t) b, t, DIV_ROUND_UP(((t) - (b)), SZ_1K)
 
-	pr_notice("Virtual kernel memory layout:\n"
+	MTK_MEMCFG_LOG_AND_PRINTK(KERN_NOTICE "Virtual kernel memory layout:\n"
 		  "    vmalloc : 0x%16lx - 0x%16lx   (%6ld MB)\n"
 #ifdef CONFIG_SPARSEMEM_VMEMMAP
 		  "    vmemmap : 0x%16lx - 0x%16lx   (%6ld MB)\n"
