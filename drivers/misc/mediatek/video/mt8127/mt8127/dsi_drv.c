@@ -209,10 +209,6 @@ unsigned int custom_pll_clock_remap(int input_mipi_clock)
     return ret;
 }
 #endif
-static void lcm_mdelay(UINT32 ms)
-{
-    udelay(1000 * ms);
-}
 void DSI_Enable_Log(bool enable)
 {
     dsi_log_on = enable;
@@ -1570,7 +1566,7 @@ DSI_STATUS DSI_Reset(void)
 {
     //DSI_REG->DSI_COM_CTRL.DSI_RESET = 1;
     OUTREGBIT(DSI_COM_CTRL_REG,DSI_REG->DSI_COM_CTRL,DSI_RESET,1);
-//  lcm_mdelay(5);
+//  mdelay(5);
     //DSI_REG->DSI_COM_CTRL.DSI_RESET = 0;
     OUTREGBIT(DSI_COM_CTRL_REG,DSI_REG->DSI_COM_CTRL,DSI_RESET,0);
 
@@ -1715,7 +1711,7 @@ DSI_STATUS DSI_handle_TE(void)
     //data_array=0x00351504;
     //DSI_set_cmdq(&data_array, 1, 1);
 
-    //lcm_mdelay(10);
+    //mdelay(10);
 
     // RACT
     //data_array=1;
@@ -1743,7 +1739,7 @@ DSI_STATUS DSI_handle_TE(void)
     // wait TE Trigger status
 //  do
 //  {
-        lcm_mdelay(10);
+        mdelay(10);
 
         data_array=INREG32(&DSI_REG->DSI_INTSTA);
         DISP_LOG_PRINT(ANDROID_LOG_INFO, "DSI", "[DISP] DSI INT state : %x !! \n", data_array);
@@ -2268,22 +2264,22 @@ void DSI_lane0_ULP_mode(bool enter)
         // suspend
         tmp_reg1.L0_HS_TX_EN=0;
         OUTREG32(&DSI_REG->DSI_PHY_LD0CON, AS_UINT32(&tmp_reg1));
-        lcm_mdelay(1);
+        mdelay(1);
         tmp_reg1.L0_ULPM_EN=1;
         OUTREG32(&DSI_REG->DSI_PHY_LD0CON, AS_UINT32(&tmp_reg1));
-        lcm_mdelay(1);
+        mdelay(1);
     }
     else {
         // resume
         tmp_reg1.L0_ULPM_EN=0;
         OUTREG32(&DSI_REG->DSI_PHY_LD0CON, AS_UINT32(&tmp_reg1));
-        lcm_mdelay(1);
+        mdelay(1);
         tmp_reg1.L0_WAKEUP_EN=1;
         OUTREG32(&DSI_REG->DSI_PHY_LD0CON, AS_UINT32(&tmp_reg1));
-        lcm_mdelay(1);
+        mdelay(1);
         tmp_reg1.L0_WAKEUP_EN=0;
         OUTREG32(&DSI_REG->DSI_PHY_LD0CON, AS_UINT32(&tmp_reg1));
-        lcm_mdelay(1);
+        mdelay(1);
     }
 }
 
@@ -3749,7 +3745,7 @@ DSI_STATUS Wait_ULPS_Mode(void)
 
     while(((INREG32(DSI_BASE + 0x14C)>> 24) & 0xFF) != 0x04)
     {
-        lcm_mdelay(5);
+        mdelay(5);
 #ifdef DDI_DRV_DEBUG_LOG_ENABLE
         DISP_LOG_PRINT(ANDROID_LOG_INFO, "DSI", "DSI+%04x : 0x%08x \n", DSI_BASE, INREG32(DSI_BASE + 0x14C));
 #endif
@@ -3779,7 +3775,7 @@ DSI_STATUS Wait_WakeUp(void)
     OUTREG32(&DSI_REG->DSI_PHY_LCCON, AS_UINT32(&lccon_reg));
     OUTREG32(&DSI_REG->DSI_PHY_LD0CON, AS_UINT32(&ld0con));
 
-    lcm_mdelay(1);//Wait 1ms for LCM Spec
+    mdelay(1);//Wait 1ms for LCM Spec
 
     lccon_reg.LC_WAKEUP_EN =1;
     ld0con.L0_WAKEUP_EN=1;
@@ -3788,7 +3784,7 @@ DSI_STATUS Wait_WakeUp(void)
 
     while(((INREG32(DSI_BASE + 0x148)>> 8) & 0xFF) != 0x01)
     {
-        lcm_mdelay(5);
+        mdelay(5);
 #ifdef DDI_DRV_DEBUG_LOG_ENABLE
         DISP_LOG_PRINT(ANDROID_LOG_INFO, "DSI", "[soso]DSI+%04x : 0x%08x \n", DSI_BASE, INREG32(DSI_BASE + 0x148));
 #endif
