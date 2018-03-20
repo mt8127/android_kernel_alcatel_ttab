@@ -303,7 +303,9 @@ boot := arch/arm/boot
 archprepare:
 	$(Q)$(MAKE) $(build)=arch/arm/tools include/generated/mach-types.h
 -include $(srctree)/scripts/ptgen/$(MTK_PLATFORM)/ptgen.mk
+ifeq ($(CONFIG_MTK_USE_DRVGEN),y)
 -include $(srctree)/scripts/drvgen/drvgen.mk
+endif
 -include $(srctree)/scripts/ptgen/$(MTK_PLATFORM)/ptgen.mk
 # Convert bzImage to zImage
 bzImage: zImage

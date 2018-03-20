@@ -403,6 +403,10 @@ config MTK_COMBO_AOSP_TETHERING_SUPPORT
 	bool "Multiplex wlan0 for both AP and STA"
 	default n
 
+config MTK_USE_DRVGEN
+	bool "use drvgen"
+	default n
+
 source "drivers/misc/mediatek/Kconfig.kernel"
 source "drivers/misc/mediatek/Kconfig.drivers"
 source "drivers/misc/mediatek/smartpa/Kconfig"

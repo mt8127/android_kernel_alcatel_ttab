@@ -19,6 +19,10 @@ MTK_PLATFORM_PATH_ROOT := $(srctree)/drivers/misc/mediatek/mach/$(MTK_PLATFORM)
 MTK_PROJECT_PATH_ROOT := $(srctree)/drivers/misc/mediatek/mach/$(MTK_PLATFORM)/$(ARCH_MTK_PROJECT)
 endif
 
+ifneq ($(CONFIG_MTK_USE_DRVGEN),y)
+DRVGEN_OUT := $(MTK_PROJECT_PATH_ROOT)/dct/dct
+endif
+
 ccflags-y += -I$(MTK_PLATFORM_PATH_ROOT)/include \
              -I$(MTK_PLATFORM_PATH_ROOT)/include/mach \
              -I$(MTK_PROJECT_PATH_ROOT)/accdet \
