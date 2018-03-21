@@ -10,9 +10,9 @@ subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/mach/$(MTK_PLATFORM)/incl
 # MT6628 FM driver
 #ifeq ($(CONFIG_MTK_FM_CHIP), MT6628_FM)
 
-$(warning feature_option=$(CONFIG_MTK_FM_CHIP))
+#$(warning feature_option=$(CONFIG_MTK_FM_CHIP))
 ifeq ($(findstring MT6628_FM,$(CONFIG_MTK_FM_CHIP)),MT6628_FM)
-$(warning MT6628_FM)
+#$(warning MT6628_FM)
 	FM_CHIP := mt6628
 	FM_CHIP_PATH := $(FM_CHIP)/pub/$(FM_CHIP)
 	ccflags-y += -I$(src)/inc \
@@ -35,7 +35,7 @@ obj-$(CONFIG_MTK_FM) += mtk_fm_drv.o
 				$(FM_CHIP_PATH)_fm_cmd.o \
 				$(FM_CHIP_PATH)_fm_config.o
 	mtk_fm_drv-objs += $(mt6628-objs)
-$(warning $(mtk_fm_drv-objs))
+#$(warning $(mtk_fm_drv-objs))
 	#obj-$(CONFIG_MTK_FM) += private/
 endif
 
@@ -43,7 +43,7 @@ endif
 #ifeq ($(CONFIG_MTK_FM_CHIP), MT6620_FM)
 
 ifeq ($(findstring MT6620_FM,$(CONFIG_MTK_FM_CHIP)),MT6620_FM)
-$(warning MT6620_FM)
+#$(warning MT6620_FM)
 	FM_CHIP := mt6620
 	FM_CHIP_PATH := $(FM_CHIP)/pub/$(FM_CHIP)
 	ccflags-y += -I$(src)/inc \
@@ -66,7 +66,7 @@ $(warning MT6620_FM)
 					$(FM_CHIP_PATH)_fm_cmd.o \
 					$(FM_CHIP_PATH)_fm_config.o
 	mtk_fm_drv-objs += $(mt6620-objs)
-$(warning $(mtk_fm_drv-objs))
+#$(warning $(mtk_fm_drv-objs))
 	#obj-$(CONFIG_MTK_FM) += private/
 endif
 #$(foreach each_chip, $(CONFIG_MTK_FM_CHIP),$(eval $(call build_speical_fm_driver,$(each_chip))))
@@ -75,7 +75,7 @@ endif
 # MT6627 FM driver
 
 ifeq ($(findstring MT6627_FM,$(CONFIG_MTK_FM_CHIP)),MT6627_FM)
-$(warning MT6627_FM)
+#$(warning MT6627_FM)
 	FM_CHIP := mt6627
 	FM_CHIP_PATH := $(FM_CHIP)/pub/$(FM_CHIP)
 	ccflags-y += -DMT6627_FM
@@ -99,14 +99,14 @@ $(warning MT6627_FM)
 					$(FM_CHIP_PATH)_fm_cmd.o \
 					$(FM_CHIP_PATH)_fm_config.o
 	mtk_fm_drv-objs += $(mt6627-objs)
-$(warning $(mtk_fm_drv-objs))
+#$(warning $(mtk_fm_drv-objs))
 	#obj-$(CONFIG_MTK_FM) += private/
 endif
 
 # MT6625 FM driver
 
 ifeq ($(findstring MT6625_FM,$(CONFIG_MTK_FM_CHIP)),MT6625_FM)
-$(warning MT6627_FM)
+#$(warning MT6627_FM)
 	FM_CHIP := mt6627
 	FM_CHIP_PATH := $(FM_CHIP)/pub/$(FM_CHIP)
 	ccflags-y += -DMT6627_FM
@@ -131,13 +131,13 @@ $(warning MT6627_FM)
 					$(FM_CHIP_PATH)_fm_cmd.o \
 					$(FM_CHIP_PATH)_fm_config.o
 	mtk_fm_drv-objs += $(mt6627-objs)
-$(warning $(mtk_fm_drv-objs))
+#$(warning $(mtk_fm_drv-objs))
 	#obj-$(CONFIG_MTK_FM) += private/
 endif
 
 # MT6630 FM driver
 ifeq ($(findstring MT6630_FM,$(CONFIG_MTK_FM_CHIP)),MT6630_FM)
-$(warning MT6630_FM)
+#$(warning MT6630_FM)
 	FM_CHIP := mt6630
 	FM_CHIP_PATH := $(FM_CHIP)/pub/$(FM_CHIP)
     ccflags-y += -DMT6630_FM
@@ -161,7 +161,7 @@ $(warning MT6630_FM)
 					$(FM_CHIP_PATH)_fm_cmd.o \
 					$(FM_CHIP_PATH)_fm_config.o
 	mtk_fm_drv-objs += $(mt6630-objs)
-$(warning $(mtk_fm_drv-objs))
+#$(warning $(mtk_fm_drv-objs))
 	#obj-$(CONFIG_MTK_FM) += private/
 endif
 

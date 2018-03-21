@@ -778,12 +778,6 @@ config MTK_MLC_NAND_SUPPORT
   depends on MTK_MTD_NAND
   ---help---
 	  Enables support for MLC NAND.
-
-config MTK_COMBO_NAND_SUPPORT
-  tristate "Mediatek COMBO NAND Support"
-  depends on MTK_MTD_NAND
-  ---help---
-	  Enables support for COMBO NAND.
 	  
 # Power Related
 if POWER_SUPPLY
@@ -1642,7 +1636,7 @@ config MTK_THERMAL_PA_VIA_ATCMD
 
 config MTK_COMBO_NAND_SUPPORT
 	bool "MTK_COMBO_NAND_SUPPORT"
-	depends on !MTK_EMMC_SUPPORT
+	depends on MTK_MTD_NAND && !MTK_EMMC_SUPPORT
 	help
 	  To support different NAND page size on the same load
 
