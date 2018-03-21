@@ -1049,7 +1049,7 @@ void ipv4_pktinfo_prepare(struct sk_buff *skb)
 	if (unlikely(IPCB(skb)->opt.optlen))
 		skb_dst_force(skb);
 	else
-	skb_dst_drop(skb);
+		skb_dst_drop(skb);
 }
 
 int ip_setsockopt(struct sock *sk, int level,
