@@ -202,7 +202,7 @@ ccflags-y += -DSVN_REV_STRING=\"$(DRIVER_REV)\"
 ccflags-y += -I$(srctree)/drivers/staging/android
 
 VERSION_STRINGS :=
-VERSION_STRINGS += API_VERSION=$(shell cd $(DRIVER_DIR); grep "\#define _MALI_API_VERSION" $(FILES_PREFIX)include/linux/mali/mali_utgard_uk_types.h | cut -d' ' -f 3 )
+VERSION_STRINGS += API_VERSION=$(shell grep "\#define _MALI_API_VERSION" $(srctree)/$(DRIVER_DIR)/include/linux/mali/mali_utgard_uk_types.h | cut -d' ' -f 3 )
 VERSION_STRINGS += REPO_URL=$(REPO_URL)
 VERSION_STRINGS += REVISION=$(DRIVER_REV)
 VERSION_STRINGS += CHANGED_REVISION=$(CHANGED_REVISION)
