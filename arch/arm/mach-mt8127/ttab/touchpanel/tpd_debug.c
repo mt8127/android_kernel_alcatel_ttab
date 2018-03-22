@@ -4,7 +4,7 @@
 #include <linux/miscdevice.h>
 #include <linux/i2c.h>
 #include <linux/delay.h>
-#include <tpd.h>
+#include "tpd.h"
 
 #ifdef TPD_DEBUG_CODE
 int tpd_fail_count = 0;
