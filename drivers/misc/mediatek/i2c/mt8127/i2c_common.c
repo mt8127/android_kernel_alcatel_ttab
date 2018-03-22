@@ -403,7 +403,7 @@ static int __exit i2c_common_remove(struct platform_device *pdev)
   return ret;
 }
 
-static struct platform_driver i2c_common_driver= {
+static struct platform_driver __refdata i2c_common_driver= {
   .driver = {
     .name   = "mt-i2cd",
     .owner  = THIS_MODULE,

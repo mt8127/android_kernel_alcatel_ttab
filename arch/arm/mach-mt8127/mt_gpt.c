@@ -635,8 +635,8 @@ static long notrace mt_read_sched_clock(void)
     return mt_gpt_read(NULL);
 }
 
-static void mt_gpt_init(void);
-struct mt_clock mt6582_gpt =
+static void __init mt_gpt_init(void);
+struct mt_clock __refdata mt6582_gpt =
 {
     .clockevent =
     {

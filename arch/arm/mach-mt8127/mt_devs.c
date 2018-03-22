@@ -2381,7 +2381,7 @@ void __weak eemcs_memory_reserve(void)
     printk(KERN_ERR"calling weak function %s\n", __FUNCTION__);
 }
 
-void mt_reserve(void)
+void __init  mt_reserve(void)
 {
 //    aee_dram_console_reserve_memory();
     mrdump_reserve_memory();

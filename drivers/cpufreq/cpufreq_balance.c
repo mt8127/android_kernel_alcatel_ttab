@@ -872,7 +872,7 @@ EXPORT_SYMBOL(hp_based_cpu_num);
 
 #ifdef CONFIG_SMP
 
-static void hp_work_handler(struct work_struct *work)
+static void __cpuinit hp_work_handler(struct work_struct *work)
 {
 	if (mutex_trylock(&bl_onoff_mutex))
 	{

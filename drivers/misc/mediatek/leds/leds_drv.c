@@ -621,7 +621,7 @@ static void mt65xx_leds_shutdown(struct platform_device *pdev)
 
 }
 
-static struct platform_driver mt65xx_leds_driver = {
+static struct platform_driver __refdata mt65xx_leds_driver = {
 	.driver = {
 		   .name = "leds-mt65xx",
 		   .owner = THIS_MODULE,
