@@ -238,7 +238,6 @@ u8 sensor_num = 0;
 /*change counter data type to u16, because GTP_CHK_FS_MNT_MAX is 300 */
 u16 gtp_ref_retries = 0;
 u16 gtp_clk_retries = 0;
-static u16 is_data_mounted = 0;
 /*[PLATFORM]-Add-NED   by falin.luo@tcl.com 2015/4/29*/
 CHIP_TYPE_T gtp_chip_type = CHIP_TYPE_GT9;
 u8 rqst_processing = 0;
@@ -2497,52 +2496,6 @@ static s32 tpd_i2c_probe_next(struct i2c_client *client)
     return 0;
 }
 
-static ssize_t cfg_load_enable_store(struct device *dev,
-                    struct device_attribute *attr,
-                        const char *buf, size_t count)
-{
-	tpd_i2c_probe_next(i2c_client_point);	
-	return count;
-}
-static ssize_t cfg_load_enable_show(struct device *dev,
-                    struct device_attribute *attr,
-                        char *buf)
-{
-	return 1;
-}
-static  DEVICE_ATTR(cfg_load_enable, S_IRUGO|S_IWUSR, cfg_load_enable_show, cfg_load_enable_store);
-
-/*[PLATFORM]-Add-BEGIN by falin.luo@tcl.com 2015/4/29*/
-/*sys interface to get and set the data partition mount status*/
-#ifdef GTP_COMPATIBLE_MODE
-
-static ssize_t data_is_mount_store(struct device *dev,
-                    struct device_attribute *attr,
-                        const char *buf, size_t count)
-{
-	GTP_INFO("enter %s", __func__);
-
-	
-	is_data_mounted = ((buf[0] == '1') ? 1 : 0);
-
-	GTP_INFO("is_data_mount = %d, buf = %s", is_data_mounted, buf);
-
-	return count;
-}
-static ssize_t data_is_mount_show(struct device *dev,
-                    struct device_attribute *attr,
-                        char *buf)
-{
-	return snprintf(buf, PAGE_SIZE, "is_data_mounted = %d\n", is_data_mounted);
-}
-
-static DEVICE_ATTR(data_is_mount, 0644, data_is_mount_show, data_is_mount_store);
-
-#endif
-
-/*[PLATFORM]-Add-END by falin.luo@tcl.com 2015/4/29*/
-
-
 static struct miscdevice cfg_misc_device =
 {
     .minor = MISC_DYNAMIC_MINOR,
@@ -2705,13 +2658,6 @@ static s32 tpd_i2c_probe(struct i2c_client *client, const struct i2c_device_id *
     tpd_load_status = 1;
 #endif
 	misc_register(&cfg_misc_device);
-/*[PLATFORM]-Add-BEGIN by falin.luo@tcl.com 2015/4/29*/
-#ifdef GTP_COMPATIBLE_MODE
-	device_create_file(cfg_misc_device.this_device, &dev_attr_data_is_mount);
-#endif
-/*[PLATFORM]-Add-END by falin.luo@tcl.com 2015/4/29*/
-
-	device_create_file(cfg_misc_device.this_device, &dev_attr_cfg_load_enable);
     tpd_load_status = 1;
     return 0;
 }
@@ -3690,9 +3636,7 @@ static int tpd_local_init(void)
     GTP_DEBUG("end %s, %d\n", __FUNCTION__, __LINE__);
     tpd_type_cap = 1;
 
-	if (get_boot_mode() == RECOVERY_BOOT) {
-		tpd_i2c_probe_next(i2c_client_point);
-	}
+	tpd_i2c_probe_next(i2c_client_point);
 
     return 0;
 }
