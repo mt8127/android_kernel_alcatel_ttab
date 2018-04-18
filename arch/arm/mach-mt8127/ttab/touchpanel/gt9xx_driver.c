@@ -1584,7 +1584,7 @@ static u8 gtp_bak_ref_proc(struct i2c_client *client, u8 mode)
 
     //check file-system mounted
     GTP_DEBUG("[gtp_bak_ref_proc]Waiting for FS %d", gtp_ref_retries);
-    if (/*gup_check_fs_mounted("/data") == FAIL*/!is_data_mounted)/*[PLATFORM]-MOD by falin.luo@tcl.com 2015/4/29*/
+    if (gup_check_fs_mounted("/data") == FAIL)/*[PLATFORM]-MOD by falin.luo@tcl.com 2015/4/29*/
     {
         GTP_DEBUG("[gtp_bak_ref_proc]/data not mounted");
         if(gtp_ref_retries++ < GTP_CHK_FS_MNT_MAX)
@@ -1820,7 +1820,7 @@ static u8 gtp_main_clk_proc(struct i2c_client *client)
     struct file *flp = NULL;
 
     GTP_DEBUG("[gtp_main_clk_proc]Waiting for FS %d", gtp_clk_retries);/*[PLATFORM]-MOD by falin.luo@tcl.com 2015/4/29*/
-    if (/*gup_check_fs_mounted("/data") == FAIL*/!is_data_mounted)/*[PLATFORM]-MOD by falin.luo@tcl.com 2015/4/29*/
+    if (gup_check_fs_mounted("/data") == FAIL)/*[PLATFORM]-MOD by falin.luo@tcl.com 2015/4/29*/
     {
         GTP_DEBUG("[gtp_main_clk_proc]/data not mounted");
         if(gtp_clk_retries++ < GTP_CHK_FS_MNT_MAX)
@@ -1961,8 +1961,7 @@ u8 gtp_hopping_proc(struct i2c_client *client, s32 mode)
 
     GTP_DEBUG("Store hopping data, wait for /data mounted.");
 	/*[PLATFORM]-MOD-BEGIN by falin.luo@tcl.com 2015/4/29*/
-//    ret = gup_check_fs_mounted("/data");
-	ret = is_data_mounted ? SUCCESS : FAIL;
+    ret = gup_check_fs_mounted("/data");
 	/*[PLATFORM]-MOD-END by falin.luo@tcl.com 2015/4/29*/
 
     if (FAIL == ret)
@@ -3690,6 +3689,10 @@ static int tpd_local_init(void)
 
     GTP_DEBUG("end %s, %d\n", __FUNCTION__, __LINE__);
     tpd_type_cap = 1;
+
+	if (get_boot_mode() == RECOVERY_BOOT) {
+		tpd_i2c_probe_next(i2c_client_point);
+	}
 
     return 0;
 }
