@@ -323,8 +323,8 @@ typedef enum
 
 #define GTP_CHK_FW_MAX                  1000
 #define GTP_CHK_FS_MNT_MAX              300
-#define GTP_BAK_REF_PATH                "/data/gtp_ref.bin"
-#define GTP_MAIN_CLK_PATH               "/data/gtp_clk.bin"
+#define GTP_BAK_REF_PATH                "/cache/gtp_ref.bin"
+#define GTP_MAIN_CLK_PATH               "/cache/gtp_clk.bin"
 #define GTP_RQST_CONFIG                 0x01
 #define GTP_RQST_BAK_REF                0x02
 #define GTP_RQST_RESET                  0x03

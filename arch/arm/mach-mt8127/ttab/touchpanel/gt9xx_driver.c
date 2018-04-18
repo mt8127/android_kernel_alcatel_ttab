@@ -1584,9 +1584,9 @@ static u8 gtp_bak_ref_proc(struct i2c_client *client, u8 mode)
 
     //check file-system mounted
     GTP_DEBUG("[gtp_bak_ref_proc]Waiting for FS %d", gtp_ref_retries);
-    if (gup_check_fs_mounted("/data") == FAIL)/*[PLATFORM]-MOD by falin.luo@tcl.com 2015/4/29*/
+    if (gup_check_fs_mounted("/cache") == FAIL)/*[PLATFORM]-MOD by falin.luo@tcl.com 2015/4/29*/
     {
-        GTP_DEBUG("[gtp_bak_ref_proc]/data not mounted");
+        GTP_DEBUG("[gtp_bak_ref_proc]/cache not mounted");
         if(gtp_ref_retries++ < GTP_CHK_FS_MNT_MAX)
         {
         	msleep(100);/*[PLATFORM]-ADD by falin.luo@tcl.com 2015/4/29*/
@@ -1595,7 +1595,7 @@ static u8 gtp_bak_ref_proc(struct i2c_client *client, u8 mode)
     }
     else
     {
-        GTP_DEBUG("[gtp_bak_ref_proc]/data mounted !!!!");
+        GTP_DEBUG("[gtp_bak_ref_proc]/cache mounted !!!!");
     }
 
     if (is_950)
@@ -1820,9 +1820,9 @@ static u8 gtp_main_clk_proc(struct i2c_client *client)
     struct file *flp = NULL;
 
     GTP_DEBUG("[gtp_main_clk_proc]Waiting for FS %d", gtp_clk_retries);/*[PLATFORM]-MOD by falin.luo@tcl.com 2015/4/29*/
-    if (gup_check_fs_mounted("/data") == FAIL)/*[PLATFORM]-MOD by falin.luo@tcl.com 2015/4/29*/
+    if (gup_check_fs_mounted("/cache") == FAIL)/*[PLATFORM]-MOD by falin.luo@tcl.com 2015/4/29*/
     {
-        GTP_DEBUG("[gtp_main_clk_proc]/data not mounted");
+        GTP_DEBUG("[gtp_main_clk_proc]/cache not mounted");
         if(gtp_clk_retries++ < GTP_CHK_FS_MNT_MAX)
         {
         	msleep(100);/*[PLATFORM]-ADD by falin.luo@tcl.com 2015/4/29*/
@@ -1835,7 +1835,7 @@ static u8 gtp_main_clk_proc(struct i2c_client *client)
     }
     else
     {
-        GTP_DEBUG("[gtp_main_clk_proc]/data mounted !!!!");
+        GTP_DEBUG("[gtp_main_clk_proc]/cache mounted !!!!");
         flp = filp_open(GTP_MAIN_CLK_PATH, O_RDWR | O_CREAT, 0666);
         if (!IS_ERR(flp))
         {
@@ -1959,17 +1959,17 @@ u8 gtp_hopping_proc(struct i2c_client *client, s32 mode)
 {
     s32 ret = 0;
 
-    GTP_DEBUG("Store hopping data, wait for /data mounted.");
+    GTP_DEBUG("Store hopping data, wait for /cache mounted.");
 	/*[PLATFORM]-MOD-BEGIN by falin.luo@tcl.com 2015/4/29*/
-    ret = gup_check_fs_mounted("/data");
+    ret = gup_check_fs_mounted("/cache");
 	/*[PLATFORM]-MOD-END by falin.luo@tcl.com 2015/4/29*/
 
     if (FAIL == ret)
     {
-        GTP_DEBUG("/data not mounted.");
+        GTP_DEBUG("/cache not mounted.");
         return FAIL;
     }
-    GTP_DEBUG("/data Mounted!");
+    GTP_DEBUG("/cache Mounted!");
 
     if (GTP_HOPPING_SEND == mode)
     {
