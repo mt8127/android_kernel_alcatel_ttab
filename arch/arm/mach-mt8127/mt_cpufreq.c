@@ -115,12 +115,12 @@ static struct early_suspend mt_cpufreq_early_suspend_handler =
 #define DVFS_F4     ( 598000)   // KHz
 
 #if defined(HQA_LV_1_09V)
-    #define DVFS_V0     (1250)  // mV
+    #define DVFS_V0     (1320)  // mV
     #define DVFS_V1     (1150)  // mV
     #define DVFS_V2     (1090)  // mV
     #define DVFS_V3     (1090)  // mV
 #elif defined(HQA_NV_1_15V)
-    #define DVFS_V0     (1260)  // mV
+    #define DVFS_V0     (1320)  // mV
     #define DVFS_V1     (1250)  // mV
     #define DVFS_V2     (1150)  // mV
     #define DVFS_V3     (1050)  // mV /*Not used */
@@ -130,7 +130,7 @@ static struct early_suspend mt_cpufreq_early_suspend_handler =
     #define DVFS_V2     (1150)  // mV /*Not used */
     #define DVFS_V3     (1050)  // mV /*Not used */
 #else /* Normal case */
-    #define DVFS_V0     (1300)  // mV
+    #define DVFS_V0     (1320)  // mV
     #define DVFS_V1     (1250)  // mV
     #ifdef CPUFREQ_SDIO_TRANSFER
     #define DVFS_V2_0   (1185)  // mV
@@ -176,7 +176,7 @@ static unsigned int g_limited_max_freq;
 static unsigned int g_limited_min_freq;
 //static unsigned int g_gpufreq_level = 0; /* GPU 0: 500MHz 1: 416MHz */
 static unsigned int g_cpufreq_get_ptp_level = 0;
-static unsigned int g_max_freq_by_ptp = DVFS_F0; /* default 1.3GHz */
+static unsigned int g_max_freq_by_ptp = DVFS_F0_1; /* overclocked to 1.69GHz */
 #if defined(CONFIG_THERMAL_LIMIT_TEST)
 static unsigned int g_limited_load_for_thermal_test = 0;
 static unsigned int g_limited_max_thermal_power;
@@ -241,7 +241,7 @@ struct mt_cpu_power_info
 ****************************/
 #if defined(HQA_LV_1_09V)
 static struct mt_cpu_freq_info mt8127_freqs_e1[] = {
-    OP(DVFS_F0, DVFS_V0),
+    OP(DVFS_F0_1, DVFS_V0),
     OP(DVFS_F1, DVFS_V0),
     OP(DVFS_F2, DVFS_V1),
     OP(DVFS_F3, DVFS_V1),
@@ -249,7 +249,7 @@ static struct mt_cpu_freq_info mt8127_freqs_e1[] = {
 };
 #elif defined(HQA_NV_1_15V)
 static struct mt_cpu_freq_info mt8127_freqs_e1[] = {
-    OP(DVFS_F0, DVFS_V0),
+    OP(DVFS_F0_1, DVFS_V0),
     OP(DVFS_F1, DVFS_V1),
     OP(DVFS_F2, DVFS_V2),
     OP(DVFS_F3, DVFS_V2),
@@ -257,7 +257,7 @@ static struct mt_cpu_freq_info mt8127_freqs_e1[] = {
 };
 #elif defined(HQA_HV_1_21V)
 static struct mt_cpu_freq_info mt8127_freqs_e1[] = {
-    OP(DVFS_F0, DVFS_V0),
+    OP(DVFS_F0_1, DVFS_V0),
     OP(DVFS_F1, DVFS_V1),
     OP(DVFS_F2, DVFS_V1),
     OP(DVFS_F3, DVFS_V1),
@@ -265,7 +265,7 @@ static struct mt_cpu_freq_info mt8127_freqs_e1[] = {
 };
 #else /* Normal case */
 static struct mt_cpu_freq_info mt8127_freqs_e1[] = {
-    OP(DVFS_F0, DVFS_V0),
+    OP(DVFS_F0_1, DVFS_V0),
     OP(DVFS_F1, DVFS_V1),
     OP(DVFS_F2, DVFS_V2),
     OP(DVFS_F3, DVFS_V2),
@@ -278,7 +278,7 @@ static struct mt_cpu_freq_info mt8127_freqs_e1[] = {
 #endif
 #ifdef CPUSTRESS_VPROC_1_25V_GPU_500MHZ_1BUCK
 static struct mt_cpu_freq_info mt8127_freqs_e1_gpu[] = {
-    OP(DVFS_F0, DVFS_V0),
+    OP(DVFS_F0_1, DVFS_V0),
     OP(DVFS_F1, DVFS_V0),
     OP(DVFS_F2, DVFS_V0),
     OP(DVFS_F3, DVFS_V0),
