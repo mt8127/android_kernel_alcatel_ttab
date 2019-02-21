@@ -1,9 +1,7 @@
 #clouds add
 VER:=eng
-ifneq ($(strip $(TARGET_BUILD_VARIANT)),)
-ifneq ($(strip $(TARGET_BUILD_VARIANT)),eng)
+ifndef CONFIG_MT_ENG_BUILD
 VER:=user
-endif
 endif
 #----------------------------------------------------------
 #[Section:Manual modify]
@@ -13,9 +11,7 @@ USING_GPU_UTILIZATION := 1
 
 #----------------------------------------------------------
 #[Section:Should add to alps project config (TODO)]
-#Not yet move to "alps/mediatek/config/mt6582/autoconfig/kconfig/platform"
 #due to the mechanism
-ccflags-y += -DCONFIG_MALI450
 
 CONFIG_MALI400 := y
 ifeq ($(VER),eng)
@@ -30,11 +26,11 @@ CONFIG_DMA_SHARED_BUFFER := y
 #CONFIG_MALI400_UMP := y
 #CONFIG_MALI400_PROFILING := y
 #CONFIG_MALI400_INTERNAL_PROFILING := y
+CONFIG_MALI450 :=y
 
 CONFIG_SYNC := y
 ccflags-y += -DCONFIG_SYNC
 
-ccflags-$(CONFIG_MALI400_PROFILING) += -DCONFIG_MALI400_PROFILING
 
 #----------------------------------------------------------
 #Debug version (BUILD := debug not eatten by kbuild)

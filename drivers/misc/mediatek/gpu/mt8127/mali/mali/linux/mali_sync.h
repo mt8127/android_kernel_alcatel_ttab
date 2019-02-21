@@ -1,7 +1,7 @@
 /*
  * This confidential and proprietary software may be used only as
  * authorised by a licensing agreement from ARM Limited
- * (C) COPYRIGHT 2012-2013 ARM Limited
+ * (C) COPYRIGHT 2012-2015 ARM Limited
  * ALL RIGHTS RESERVED
  * The entire notice above must be reproduced on all authorised
  * copies and copies may only be made to the extent permitted
@@ -19,18 +19,19 @@
 
 #if defined(CONFIG_SYNC)
 
-#include <linux/version.h>
-
 #include <linux/seq_file.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
-#include <sync.h>
-#else
+#include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0)
 #include <linux/sync.h>
+#else
+#include <sync.h>
 #endif
+
 
 #include "mali_osk.h"
 
 struct mali_sync_flag;
+struct mali_timeline;
 
 /**
  * Create a sync timeline.
@@ -38,15 +39,7 @@ struct mali_sync_flag;
  * @param name Name of the sync timeline.
  * @return The new sync timeline if successful, NULL if not.
  */
-struct sync_timeline *mali_sync_timeline_create(const char *name);
-
-/**
- * Check if sync timeline belongs to Mali.
- *
- * @param sync_tl Sync timeline to check.
- * @return MALI_TRUE if sync timeline belongs to Mali, MALI_FALSE if not.
- */
-mali_bool mali_sync_timeline_is_ours(struct sync_timeline *sync_tl);
+struct sync_timeline *mali_sync_timeline_create(struct mali_timeline *timeline, const char *name);
 
 /**
  * Creates a file descriptor representing the sync fence.  Will release sync fence if allocation of

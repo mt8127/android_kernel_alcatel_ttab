@@ -1,12 +1,15 @@
 /*
  * This confidential and proprietary software may be used only as
  * authorised by a licensing agreement from ARM Limited
- * (C) COPYRIGHT 2012-2013 ARM Limited
+ * (C) COPYRIGHT 2012-2015 ARM Limited
  * ALL RIGHTS RESERVED
  * The entire notice above must be reproduced on all authorised
  * copies and copies may only be made to the extent permitted
  * by a licensing agreement from ARM Limited.
  */
+
+#ifndef __MALI_BROADCAST_H__
+#define __MALI_BROADCAST_H__
 
 /*
  *  Interface for the broadcast unit on Mali-450.
@@ -50,3 +53,5 @@ MALI_STATIC_INLINE void mali_bcast_enable(struct mali_bcast_unit *bcast_unit)
 {
 	mali_bcast_reset(bcast_unit);
 }
+
+#endif /* __MALI_BROADCAST_H__ */

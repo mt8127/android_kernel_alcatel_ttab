@@ -1,7 +1,7 @@
 /*
  * This confidential and proprietary software may be used only as
  * authorised by a licensing agreement from ARM Limited
- * (C) COPYRIGHT 2008-2013 ARM Limited
+ * (C) COPYRIGHT 2008-2015 ARM Limited
  * ALL RIGHTS RESERVED
  * The entire notice above must be reproduced on all authorised
  * copies and copies may only be made to the extent permitted
@@ -23,7 +23,7 @@
 static DEFINE_SPINLOCK(lock_tracking_lock);
 static mali_bool add_lock_to_log_and_check(struct _mali_osk_lock_debug_s *lock, uint32_t tid);
 static void remove_lock_from_log(struct _mali_osk_lock_debug_s *lock, uint32_t tid);
-static const char * const lock_order_to_string(_mali_osk_lock_order_t order);
+static const char *const lock_order_to_string(_mali_osk_lock_order_t order);
 #endif /* LOCK_ORDER_CHECKING */
 
 void _mali_osk_locks_debug_init(struct _mali_osk_lock_debug_s *checker, _mali_osk_lock_flags_t flags, _mali_osk_lock_order_t order)
@@ -44,7 +44,7 @@ void _mali_osk_locks_debug_add(struct _mali_osk_lock_debug_s *checker)
 #ifdef LOCK_ORDER_CHECKING
 	if (!(checker->orig_flags & _MALI_OSK_LOCKFLAG_UNORDERED)) {
 		if (!add_lock_to_log_and_check(checker, _mali_osk_get_tid())) {
-			printk(KERN_ERR "%d: ERROR lock %p taken while holding a lock of a higher order.\n",
+			pr_warn("%d: ERROR lock %p taken while holding a lock of a higher order.\n",
 			       _mali_osk_get_tid(), checker);
 			dump_stack();
 		}
@@ -95,11 +95,11 @@ static void dump_lock_tracking_list(void)
 	l = lock_lookup_list;
 
 	while (NULL != l) {
-		printk(" [lock: %p, tid_owner: %d, order: %d] ->", l, l->owner, l->order);
+		pr_warn(" [lock: %p, tid_owner: %d, order: %d] ->", l, l->owner, l->order);
 		l = l->next;
 		MALI_DEBUG_ASSERT(n++ < 100);
 	}
-	printk(" NULL\n");
+	pr_warn(" NULL\n");
 }
 
 static int tracking_list_length(void)
@@ -137,8 +137,8 @@ static mali_bool add_lock_to_log_and_check(struct _mali_osk_lock_debug_s *lock, 
 		/* Traverse the locks taken and find the lock of the highest order.
 		 * Since several threads may hold locks, each lock's owner must be
 		 * checked so that locks not owned by this thread can be ignored. */
-		for(;;) {
-			MALI_DEBUG_ASSERT_POINTER( l );
+		for (;;) {
+			MALI_DEBUG_ASSERT_POINTER(l);
 			if (tid == l->owner && l->order >= highest_order_for_tid) {
 				highest_order_for_tid = l->order;
 				highest_order_lock = l;
@@ -160,15 +160,15 @@ static mali_bool add_lock_to_log_and_check(struct _mali_osk_lock_debug_s *lock, 
 	ret = highest_order_for_tid < lock->order;
 
 	if (!ret) {
-		printk(KERN_ERR "Took lock of order %d (%s) while holding lock of order %d (%s)\n",
+		pr_warn("Took lock of order %d (%s) while holding lock of order %d (%s)\n",
 		       lock->order, lock_order_to_string(lock->order),
 		       highest_order_for_tid, lock_order_to_string(highest_order_for_tid));
 		dump_lock_tracking_list();
 	}
 
-	if (len+1 != tracking_list_length()) {
-		printk(KERN_ERR "************ lock: %p\n", lock);
-		printk(KERN_ERR "************ before: %d *** after: %d ****\n", len, tracking_list_length());
+	if (len + 1 != tracking_list_length()) {
+		pr_warn("************ lock: %p\n", lock);
+		pr_warn("************ before: %d *** after: %d ****\n", len, tracking_list_length());
 		dump_lock_tracking_list();
 		MALI_DEBUG_ASSERT_POINTER(NULL);
 	}
@@ -190,7 +190,7 @@ static void remove_lock_from_log(struct _mali_osk_lock_debug_s *lock, uint32_t t
 	curr = lock_lookup_list;
 
 	if (NULL == curr) {
-		printk(KERN_ERR "Error: Lock tracking list was empty on call to remove_lock_from_log\n");
+		pr_warn("Error: Lock tracking list was empty on call to remove_lock_from_log\n");
 		dump_lock_tracking_list();
 	}
 
@@ -215,9 +215,9 @@ static void remove_lock_from_log(struct _mali_osk_lock_debug_s *lock, uint32_t t
 
 	lock->next = NULL;
 
-	if (len-1 != tracking_list_length()) {
-		printk(KERN_ERR "************ lock: %p\n", lock);
-		printk(KERN_ERR "************ before: %d *** after: %d ****\n", len, tracking_list_length());
+	if (len - 1 != tracking_list_length()) {
+		pr_warn("************ lock: %p\n", lock);
+		pr_warn("************ before: %d *** after: %d ****\n", len, tracking_list_length());
 		dump_lock_tracking_list();
 		MALI_DEBUG_ASSERT_POINTER(NULL);
 	}
@@ -225,7 +225,7 @@ static void remove_lock_from_log(struct _mali_osk_lock_debug_s *lock, uint32_t t
 	spin_unlock_irqrestore(&lock_tracking_lock, local_lock_flag);
 }
 
-static const char * const lock_order_to_string(_mali_osk_lock_order_t order)
+static const char *const lock_order_to_string(_mali_osk_lock_order_t order)
 {
 	switch (order) {
 	case _MALI_OSK_LOCK_ORDER_SESSIONS:
@@ -243,38 +243,44 @@ static const char * const lock_order_to_string(_mali_osk_lock_order_t order)
 	case _MALI_OSK_LOCK_ORDER_DESCRIPTOR_MAP:
 		return "_MALI_OSK_LOCK_ORDER_DESCRIPTOR_MAP";
 		break;
-	case _MALI_OSK_LOCK_ORDER_GROUP_VIRTUAL:
-		return "_MALI_OSK_LOCK_ORDER_GROUP_VIRTUAL";
+	case _MALI_OSK_LOCK_ORDER_PM_EXECUTION:
+		return "_MALI_OSK_LOCK_ORDER_PM_EXECUTION";
 		break;
-	case _MALI_OSK_LOCK_ORDER_GROUP:
-		return "_MALI_OSK_LOCK_ORDER_GROUP";
+	case _MALI_OSK_LOCK_ORDER_EXECUTOR:
+		return "_MALI_OSK_LOCK_ORDER_EXECUTOR";
+		break;
+	case _MALI_OSK_LOCK_ORDER_TIMELINE_SYSTEM:
+		return "_MALI_OSK_LOCK_ORDER_TIMELINE_SYSTEM";
 		break;
 	case _MALI_OSK_LOCK_ORDER_SCHEDULER:
 		return "_MALI_OSK_LOCK_ORDER_SCHEDULER";
 		break;
-	case _MALI_OSK_LOCK_ORDER_PM_CORE_STATE:
-		return "_MALI_OSK_LOCK_ORDER_PM_CORE_STATE";
+	case _MALI_OSK_LOCK_ORDER_SCHEDULER_DEFERRED:
+		return "_MALI_OSK_LOCK_ORDER_SCHEDULER_DEFERRED";
 		break;
-	case _MALI_OSK_LOCK_ORDER_L2_COMMAND:
-		return "_MALI_OSK_LOCK_ORDER_L2_COMMAND";
+	case _MALI_OSK_LOCK_ORDER_DMA_COMMAND:
+		return "_MALI_OSK_LOCK_ORDER_DMA_COMMAND";
 		break;
 	case _MALI_OSK_LOCK_ORDER_PROFILING:
 		return "_MALI_OSK_LOCK_ORDER_PROFILING";
 		break;
-	case _MALI_OSK_LOCK_ORDER_L2_COUNTER:
-		return "_MALI_OSK_LOCK_ORDER_L2_COUNTER";
+	case _MALI_OSK_LOCK_ORDER_L2:
+		return "_MALI_OSK_LOCK_ORDER_L2";
+		break;
+	case _MALI_OSK_LOCK_ORDER_L2_COMMAND:
+		return "_MALI_OSK_LOCK_ORDER_L2_COMMAND";
 		break;
 	case _MALI_OSK_LOCK_ORDER_UTILIZATION:
 		return "_MALI_OSK_LOCK_ORDER_UTILIZATION";
 		break;
-	case _MALI_OSK_LOCK_ORDER_PM_EXECUTE:
-		return "_MALI_OSK_LOCK_ORDER_PM_EXECUTE";
-		break;
 	case _MALI_OSK_LOCK_ORDER_SESSION_PENDING_JOBS:
 		return "_MALI_OSK_LOCK_ORDER_SESSION_PENDING_JOBS";
 		break;
+	case _MALI_OSK_LOCK_ORDER_PM_STATE:
+		return "_MALI_OSK_LOCK_ORDER_PM_STATE";
+		break;
 	default:
-		return "";
+		return "<UNKNOWN_LOCK_ORDER>";
 	}
 }
 #endif /* LOCK_ORDER_CHECKING */

@@ -1,7 +1,7 @@
 /*
  * This confidential and proprietary software may be used only as
  * authorised by a licensing agreement from ARM Limited
- * (C) COPYRIGHT 2013 ARM Limited
+ * (C) COPYRIGHT 2013, 2015 ARM Limited
  * ALL RIGHTS RESERVED
  * The entire notice above must be reproduced on all authorised
  * copies and copies may only be made to the extent permitted
@@ -89,19 +89,12 @@ s32 mali_timeline_sync_fence_create(struct mali_timeline_system *system, struct 
 		MALI_DEBUG_ASSERT_POINTER(timeline);
 
 		sync_fence = mali_timeline_sync_fence_create_and_add_tracker(timeline, fence->points[i]);
-		if (NULL == sync_fence) 
-      {
-         MALI_DEBUG_PRINT(1, ("mali_timeline_sync_fence_create: mali_timeline_sync_fence_create_and_add_tracker!\n"));
-		   goto error;
-      }
+		if (NULL == sync_fence) goto error;
+
 		if (NULL != sync_fence_acc) {
 			/* Merge sync fences. */
 			sync_fence_acc = mali_sync_fence_merge(sync_fence_acc, sync_fence);
-			if (NULL == sync_fence_acc) 
-			{
-			   MALI_DEBUG_PRINT(1, ("mali_timeline_sync_fence_create: mali_sync_fence_merge! sync_fence_acc=%x, sync_fence=%x\n", sync_fence_acc, sync_fence));   
-			   goto error;
-			}
+			if (NULL == sync_fence_acc) goto error;
 		} else {
 			/* This was the first sync fence created. */
 			sync_fence_acc = sync_fence;
@@ -112,18 +105,11 @@ s32 mali_timeline_sync_fence_create(struct mali_timeline_system *system, struct 
 		struct sync_fence *sync_fence;
 
 		sync_fence = sync_fence_fdget(fence->sync_fd);
-		if (NULL == sync_fence) 
-      {
-         MALI_DEBUG_PRINT(1, ("mali_timeline_sync_fence_create: sync_fence_fdget! fence->sync_fd=%x, sync_fence=%x\n", fence->sync_fd, sync_fence));
-		   goto error;
-      }
+		if (NULL == sync_fence) goto error;
+
 		if (NULL != sync_fence_acc) {
 			sync_fence_acc = mali_sync_fence_merge(sync_fence_acc, sync_fence);
-			if (NULL == sync_fence_acc)
-			 {   
-            MALI_DEBUG_PRINT(1, ("mali_timeline_sync_fence_create: mali_sync_fence_merge! sync_fence_acc=%x\n", sync_fence_acc));
-			   goto error;
-			 }
+			if (NULL == sync_fence_acc) goto error;
 		} else {
 			sync_fence_acc = sync_fence;
 		}
@@ -135,11 +121,7 @@ s32 mali_timeline_sync_fence_create(struct mali_timeline_system *system, struct 
 		/* There was nothing to wait on, so return an already signaled fence. */
 
 		sync_fence_acc = mali_sync_timeline_create_signaled_fence(system->signaled_sync_tl);
-		if (NULL == sync_fence_acc) 
-		{
-		   MALI_DEBUG_PRINT(1, ("mali_timeline_sync_fence_create: mali_sync_timeline_create_signaled_fence! sync_fence_acc=%x\n", sync_fence_acc));   
-		   goto error;
-		}
+		if (NULL == sync_fence_acc) goto error;
 	}
 
 	/* Return file descriptor for the accumulated sync fence. */
@@ -149,7 +131,7 @@ error:
 	if (NULL != sync_fence_acc) {
 		sync_fence_put(sync_fence_acc);
 	}
-   MALI_DEBUG_PRINT(1, ("mali_timeline_sync_fence_create fail!return -1, sync_fence_acc=%x\n", sync_fence_acc));
+
 	return -1;
 }
 

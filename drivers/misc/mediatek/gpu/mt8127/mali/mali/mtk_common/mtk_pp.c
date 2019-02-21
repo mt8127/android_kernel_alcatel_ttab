@@ -1,3 +1,4 @@
+
 #include <linux/sched.h>
 #include <linux/string.h>
 #include <linux/vmalloc.h>
@@ -27,7 +28,7 @@ static void MTKPP_UnLock(MTK_PROC_PRINT_DATA *data)
 
 static void MTKPP_PrintQueueBuffer(MTK_PROC_PRINT_DATA *data, const char *fmt, ...) MTK_PP_FORMAT_PRINTF(2,3);
 
-static void MTKPP_PrintQueueBuffer2(MTK_PROC_PRINT_DATA *data, const char *fmt, ...) MTK_PP_FORMAT_PRINTF(2,3);
+//static void MTKPP_PrintQueueBuffer2(MTK_PROC_PRINT_DATA *data, const char *fmt, ...) MTK_PP_FORMAT_PRINTF(2,3);
 
 static void MTKPP_PrintRingBuffer(MTK_PROC_PRINT_DATA *data, const char *fmt, ...) MTK_PP_FORMAT_PRINTF(2,3);
 
@@ -72,6 +73,7 @@ static void MTKPP_PrintQueueBuffer(MTK_PROC_PRINT_DATA *data, const char *fmt, .
 	MTKPP_UnLock(data);
 }
 
+#if 0
 static void MTKPP_PrintQueueBuffer2(MTK_PROC_PRINT_DATA *data, const char *fmt, ...)
 {
 	va_list args;
@@ -105,6 +107,7 @@ static void MTKPP_PrintQueueBuffer2(MTK_PROC_PRINT_DATA *data, const char *fmt, 
 	
 	MTKPP_UnLock(data);
 }
+#endif
 
 static void MTKPP_PrintRingBuffer(MTK_PROC_PRINT_DATA *data, const char *fmt, ...)
 {
@@ -404,8 +407,7 @@ void MTKPP_Init(void)
 		}
 	}
 	
-	g_MTKPP_proc = create_proc_entry("gpulog", 0, NULL);
-	g_MTKPP_proc->proc_fops = &g_MTKPP_proc_ops;
+	g_MTKPP_proc = proc_create("gpulog", 0, NULL, &g_MTKPP_proc_ops);
 
 	return;
 	

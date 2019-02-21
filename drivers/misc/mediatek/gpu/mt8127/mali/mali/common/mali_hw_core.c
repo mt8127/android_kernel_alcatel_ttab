@@ -1,7 +1,7 @@
 /*
  * This confidential and proprietary software may be used only as
  * authorised by a licensing agreement from ARM Limited
- * (C) COPYRIGHT 2011-2013 ARM Limited
+ * (C) COPYRIGHT 2011-2015 ARM Limited
  * ALL RIGHTS RESERVED
  * The entire notice above must be reproduced on all authorised
  * copies and copies may only be made to the extent permitted
@@ -39,7 +39,9 @@ _mali_osk_errcode_t mali_hw_core_create(struct mali_hw_core *core, const _mali_o
 
 void mali_hw_core_delete(struct mali_hw_core *core)
 {
-	_mali_osk_mem_unmapioregion(core->phys_addr, core->size, core->mapped_registers);
-	core->mapped_registers = NULL;
+	if (NULL != core->mapped_registers) {
+		_mali_osk_mem_unmapioregion(core->phys_addr, core->size, core->mapped_registers);
+		core->mapped_registers = NULL;
+	}
 	_mali_osk_mem_unreqregion(core->phys_addr, core->size);
 }

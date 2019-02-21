@@ -1,7 +1,8 @@
+
 #ifndef __MTK_MALI_KERNEL_H__
 #define __MTK_MALI_KERNEL_H__
 
-#include "mt_reg_base.h"
+/*#include "mt_reg_base.h"*/
 #include <asm/io.h> /*For ioread/iowrite*/
 
 
@@ -29,7 +30,7 @@
 /*-----------------------------------------------------------------------------
     Print Macro
   -----------------------------------------------------------------------------*/
-#define MALIK_PRINTF             printk
+#define MALIK_PRINTF             pr_warn
 #define MALIK_MSG(fmt, arg...)   { MALIK_PRINTF("Mali: %s(): "fmt,__FUNCTION__, ##arg); }
 #define MALIK_ERRMSG(fmt, arg...)   { MALIK_PRINTF("Mali Error: %s()@%s:line %d: "fmt,__FUNCTION__, __FILE__,__LINE__, ##arg);  MTKMALI_DumpRegister(); }
 #define MALIK_WARNMSG(fmt, arg...)  { MALIK_PRINTF("Mali Warn: %s(): "fmt,__FUNCTION__, ##arg); }

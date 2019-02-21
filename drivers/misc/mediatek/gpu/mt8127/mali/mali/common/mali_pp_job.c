@@ -1,7 +1,7 @@
 /*
  * This confidential and proprietary software may be used only as
  * authorised by a licensing agreement from ARM Limited
- * (C) COPYRIGHT 2011-2013 ARM Limited
+ * (C) COPYRIGHT 2011-2015 ARM Limited
  * ALL RIGHTS RESERVED
  * The entire notice above must be reproduced on all authorised
  * copies and copies may only be made to the extent permitted
@@ -10,22 +10,17 @@
 
 #include "mali_pp.h"
 #include "mali_pp_job.h"
-#include "mali_dma.h"
 #include "mali_osk.h"
 #include "mali_osk_list.h"
 #include "mali_kernel_common.h"
 #include "mali_uk_types.h"
-#include "mali_pp_scheduler.h"
+#include "mali_executor.h"
 #if defined(CONFIG_DMA_SHARED_BUFFER) && !defined(CONFIG_MALI_DMA_BUF_MAP_ON_ATTACH)
 #include "linux/mali_memory_dma_buf.h"
 #endif
-#include "mali_kernel_utilization.h"
 
-/// static u32 pp_counter_src0 = MALI_HW_CORE_NO_COUNTER;      /**< Performance counter 0, MALI_HW_CORE_NO_COUNTER for disabled */
-/// static u32 pp_counter_src1 = MALI_HW_CORE_NO_COUNTER;      /**< Performance counter 1, MALI_HW_CORE_NO_COUNTER for disabled */
-static u32 pp_counter_src0 = MALI_UTILIZATION_BW_CTR_SRC0;      /**< Performance counter 0, MALI_HW_CORE_NO_COUNTER for disabled */
-static u32 pp_counter_src1 = MALI_UTILIZATION_BW_CTR_SRC1;      /**< Performance counter 1, MALI_HW_CORE_NO_COUNTER for disabled */
-
+static u32 pp_counter_src0 = MALI_HW_CORE_NO_COUNTER;   /**< Performance counter 0, MALI_HW_CORE_NO_COUNTER for disabled */
+static u32 pp_counter_src1 = MALI_HW_CORE_NO_COUNTER;   /**< Performance counter 1, MALI_HW_CORE_NO_COUNTER for disabled */
 static _mali_osk_atomic_t pp_counter_per_sub_job_count; /**< Number of values in the two arrays which is != MALI_HW_CORE_NO_COUNTER */
 static u32 pp_counter_per_sub_job_src0[_MALI_PP_MAX_SUB_JOBS] = { MALI_HW_CORE_NO_COUNTER, MALI_HW_CORE_NO_COUNTER, MALI_HW_CORE_NO_COUNTER, MALI_HW_CORE_NO_COUNTER, MALI_HW_CORE_NO_COUNTER, MALI_HW_CORE_NO_COUNTER, MALI_HW_CORE_NO_COUNTER, MALI_HW_CORE_NO_COUNTER };
 static u32 pp_counter_per_sub_job_src1[_MALI_PP_MAX_SUB_JOBS] = { MALI_HW_CORE_NO_COUNTER, MALI_HW_CORE_NO_COUNTER, MALI_HW_CORE_NO_COUNTER, MALI_HW_CORE_NO_COUNTER, MALI_HW_CORE_NO_COUNTER, MALI_HW_CORE_NO_COUNTER, MALI_HW_CORE_NO_COUNTER, MALI_HW_CORE_NO_COUNTER };
@@ -40,13 +35,15 @@ void mali_pp_job_terminate(void)
 	_mali_osk_atomic_term(&pp_counter_per_sub_job_count);
 }
 
-struct mali_pp_job *mali_pp_job_create(struct mali_session_data *session, _mali_uk_pp_start_job_s *uargs, u32 id)
+struct mali_pp_job *mali_pp_job_create(struct mali_session_data *session,
+				       _mali_uk_pp_start_job_s __user *uargs, u32 id)
 {
 	struct mali_pp_job *job;
 	u32 perf_counter_flag;
 
 	job = _mali_osk_calloc(1, sizeof(struct mali_pp_job));
 	if (NULL != job) {
+		u32 num_memory_cookies = 0;
 		if (0 != _mali_osk_copy_from_user(&job->uargs, uargs, sizeof(_mali_uk_pp_start_job_s))) {
 			goto fail;
 		}
@@ -64,15 +61,15 @@ struct mali_pp_job *mali_pp_job_create(struct mali_session_data *session, _mali_
 		perf_counter_flag = mali_pp_job_get_perf_counter_flag(job);
 
 		/* case when no counters came from user space
-		 * so pass the debugfs / DS-5 provided global ones to the job object */      
+		 * so pass the debugfs / DS-5 provided global ones to the job object */
 		if (!((perf_counter_flag & _MALI_PERFORMANCE_COUNTER_FLAG_SRC0_ENABLE) ||
 		      (perf_counter_flag & _MALI_PERFORMANCE_COUNTER_FLAG_SRC1_ENABLE))) {
 			u32 sub_job_count = _mali_osk_atomic_read(&pp_counter_per_sub_job_count);
 
 			/* These counters apply for all virtual jobs, and where no per sub job counter is specified */
 			job->uargs.perf_counter_src0 = pp_counter_src0;
-			job->uargs.perf_counter_src1 = pp_counter_src1;         
-   
+			job->uargs.perf_counter_src1 = pp_counter_src1;
+
 			/* We only copy the per sub job array if it is enabled with at least one counter */
 			if (0 < sub_job_count) {
 				job->perf_counter_per_sub_job_count = sub_job_count;
@@ -82,24 +79,22 @@ struct mali_pp_job *mali_pp_job_create(struct mali_session_data *session, _mali_
 		}
 
 		_mali_osk_list_init(&job->list);
+		_mali_osk_list_init(&job->session_fb_lookup_list);
 		job->session = session;
-		_mali_osk_list_init(&job->session_list);
 		job->id = id;
 
 		job->sub_jobs_num = job->uargs.num_cores ? job->uargs.num_cores : 1;
 		job->pid = _mali_osk_get_pid();
 		job->tid = _mali_osk_get_tid();
 
-		job->num_memory_cookies = job->uargs.num_memory_cookies;
-		if (job->num_memory_cookies > 0) {
+		_mali_osk_atomic_init(&job->sub_jobs_completed, 0);
+		_mali_osk_atomic_init(&job->sub_job_errors, 0);
+		num_memory_cookies = job->uargs.num_memory_cookies;
+		if (num_memory_cookies !=  0) {
 			u32 size;
+			u32 __user *memory_cookies = (u32 __user *)(uintptr_t)job->uargs.memory_cookies;
 
-			if (job->uargs.num_memory_cookies > session->descriptor_mapping->current_nr_mappings) {
-				MALI_PRINT_ERROR(("Mali PP job: Too many memory cookies specified in job object\n"));
-				goto fail;
-			}
-
-			size = sizeof(*job->uargs.memory_cookies) * job->num_memory_cookies;
+			size = sizeof(*memory_cookies) * num_memory_cookies;
 
 			job->memory_cookies = _mali_osk_malloc(size);
 			if (NULL == job->memory_cookies) {
@@ -107,35 +102,10 @@ struct mali_pp_job *mali_pp_job_create(struct mali_session_data *session, _mali_
 				goto fail;
 			}
 
-			if (0 != _mali_osk_copy_from_user(job->memory_cookies, job->uargs.memory_cookies, size)) {
+			if (0 != _mali_osk_copy_from_user(job->memory_cookies, memory_cookies, size)) {
 				MALI_PRINT_ERROR(("Mali PP job: Failed to copy %d bytes of memory cookies from user!\n", size));
 				goto fail;
 			}
-
-#if defined(CONFIG_DMA_SHARED_BUFFER) && !defined(CONFIG_MALI_DMA_BUF_MAP_ON_ATTACH)
-			job->num_dma_bufs = job->num_memory_cookies;
-			job->dma_bufs = _mali_osk_calloc(job->num_dma_bufs, sizeof(struct mali_dma_buf_attachment *));
-			if (NULL == job->dma_bufs) {
-				MALI_PRINT_ERROR(("Mali PP job: Failed to allocate dma_bufs array!\n"));
-				goto fail;
-			}
-#endif
-		}
-
-		/* Prepare DMA command buffer to start job, if it is virtual. */
-		if (mali_pp_job_is_virtual(job)) {
-			struct mali_pp_core *core;
-			_mali_osk_errcode_t err =  mali_dma_get_cmd_buf(&job->dma_cmd_buf);
-
-			if (_MALI_OSK_ERR_OK != err) {
-				MALI_PRINT_ERROR(("Mali PP job: Failed to allocate DMA command buffer\n"));
-				goto fail;
-			}
-
-			core = mali_pp_scheduler_get_virtual_pp();
-			MALI_DEBUG_ASSERT_POINTER(core);
-
-			mali_pp_job_dma_cmd_prepare(core, job, 0, MALI_FALSE, &job->dma_cmd_buf);
 		}
 
 		if (_MALI_OSK_ERR_OK != mali_pp_job_check(job)) {
@@ -159,24 +129,58 @@ fail:
 
 void mali_pp_job_delete(struct mali_pp_job *job)
 {
-	mali_dma_put_cmd_buf(&job->dma_cmd_buf);
+	MALI_DEBUG_ASSERT_POINTER(job);
+	MALI_DEBUG_ASSERT(_mali_osk_list_empty(&job->list));
+	MALI_DEBUG_ASSERT(_mali_osk_list_empty(&job->session_fb_lookup_list));
+
 	if (NULL != job->finished_notification) {
 		_mali_osk_notification_delete(job->finished_notification);
 	}
 
-	_mali_osk_free(job->memory_cookies);
-
+	if (NULL != job->memory_cookies) {
 #if defined(CONFIG_DMA_SHARED_BUFFER) && !defined(CONFIG_MALI_DMA_BUF_MAP_ON_ATTACH)
-	/* Unmap buffers attached to job */
-	if (0 < job->num_dma_bufs) {
+		/* Unmap buffers attached to job */
 		mali_dma_buf_unmap_job(job);
+#endif
+		_mali_osk_free(job->memory_cookies);
 	}
 
-	_mali_osk_free(job->dma_bufs);
-#endif /* CONFIG_DMA_SHARED_BUFFER */
+	_mali_osk_atomic_term(&job->sub_jobs_completed);
+	_mali_osk_atomic_term(&job->sub_job_errors);
 
 	_mali_osk_free(job);
 }
+
+void mali_pp_job_list_add(struct mali_pp_job *job, _mali_osk_list_t *list)
+{
+	struct mali_pp_job *iter;
+	struct mali_pp_job *tmp;
+
+	MALI_DEBUG_ASSERT_POINTER(job);
+	MALI_DEBUG_ASSERT_SCHEDULER_LOCK_HELD();
+
+	/* Find position in list/queue where job should be added. */
+	_MALI_OSK_LIST_FOREACHENTRY_REVERSE(iter, tmp, list,
+					    struct mali_pp_job, list) {
+		/* job should be started after iter if iter is in progress. */
+		if (0 < iter->sub_jobs_started) {
+			break;
+		}
+
+		/*
+		 * job should be started after iter if it has a higher
+		 * job id. A span is used to handle job id wrapping.
+		 */
+		if ((mali_pp_job_get_id(job) -
+		     mali_pp_job_get_id(iter)) <
+		    MALI_SCHEDULER_JOB_ID_SPAN) {
+			break;
+		}
+	}
+
+	_mali_osk_list_add(&job->list, &iter->list);
+}
+
 
 u32 mali_pp_job_get_perf_counter_src0(struct mali_pp_job *job, u32 sub_job)
 {
@@ -213,20 +217,12 @@ u32 mali_pp_job_get_perf_counter_src1(struct mali_pp_job *job, u32 sub_job)
 
 void mali_pp_job_set_pp_counter_global_src0(u32 counter)
 {
-	if (MALI_HW_CORE_NO_COUNTER == counter)
-	{
-		counter = MALI_UTILIZATION_BW_CTR_SRC0;
-	}
-	pp_counter_src0 = counter;   
+	pp_counter_src0 = counter;
 }
 
 void mali_pp_job_set_pp_counter_global_src1(u32 counter)
 {
-	if (MALI_HW_CORE_NO_COUNTER == counter)
-	{
-		counter = MALI_UTILIZATION_BW_CTR_SRC1;
-	}	     
-	pp_counter_src1 = counter;	
+	pp_counter_src1 = counter;
 }
 
 void mali_pp_job_set_pp_counter_sub_job_src0(u32 sub_job, u32 counter)
@@ -244,10 +240,7 @@ void mali_pp_job_set_pp_counter_sub_job_src0(u32 sub_job, u32 counter)
 	}
 
 	/* PS: A change from MALI_HW_CORE_NO_COUNTER to MALI_HW_CORE_NO_COUNTER will inc and dec, result will be 0 change */
-	if (MALI_HW_CORE_NO_COUNTER == counter)
-	{
-		counter = MALI_UTILIZATION_BW_CTR_SRC0;
-	}
+
 	pp_counter_per_sub_job_src0[sub_job] = counter;
 }
 
@@ -266,10 +259,7 @@ void mali_pp_job_set_pp_counter_sub_job_src1(u32 sub_job, u32 counter)
 	}
 
 	/* PS: A change from MALI_HW_CORE_NO_COUNTER to MALI_HW_CORE_NO_COUNTER will inc and dec, result will be 0 change */
-	if (MALI_HW_CORE_NO_COUNTER == counter)
-	{
-		counter = MALI_UTILIZATION_BW_CTR_SRC1;
-	}
+
 	pp_counter_per_sub_job_src1[sub_job] = counter;
 }
 

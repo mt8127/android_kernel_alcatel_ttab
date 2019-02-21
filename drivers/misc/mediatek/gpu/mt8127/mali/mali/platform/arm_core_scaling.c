@@ -1,12 +1,3 @@
-/*
- * Copyright (C) 2013 ARM Limited. All rights reserved.
- * 
- * This program is free software and is provided to you under the terms of the GNU General Public License version 2
- * as published by the Free Software Foundation, and any use by you of this program is subject to the terms of such GNU licence.
- * 
- * A copy of the licence is included with the program, and can also be obtained from Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */
 
 /**
  * @file arm_core_scaling.c
@@ -17,7 +8,6 @@
 
 #include <linux/mali/mali_utgard.h>
 #include "mali_kernel_common.h"
-#include "mali_pp_scheduler.h"
 
 #include <linux/workqueue.h>
 
@@ -25,8 +15,6 @@ static int num_cores_total;
 static int num_cores_enabled;
 
 static struct work_struct wq_work;
-
-int mali_core_scaling_enable = 0; /*Currenly not support on 8127*/
 
 static void set_num_cores(struct work_struct *work)
 {
@@ -37,34 +25,31 @@ static void set_num_cores(struct work_struct *work)
 
 static void enable_one_core(void)
 {
-	if (num_cores_enabled < num_cores_total)
-	{
+	if (num_cores_enabled < num_cores_total) {
 		++num_cores_enabled;
 		schedule_work(&wq_work);
 		MALI_DEBUG_PRINT(3, ("Core scaling: Enabling one more core\n"));
 	}
 
-	MALI_DEBUG_ASSERT(              1 <= num_cores_enabled);
+	MALI_DEBUG_ASSERT(1 <= num_cores_enabled);
 	MALI_DEBUG_ASSERT(num_cores_total >= num_cores_enabled);
 }
 
 static void disable_one_core(void)
 {
-	if (1 < num_cores_enabled)
-	{
+	if (1 < num_cores_enabled) {
 		--num_cores_enabled;
 		schedule_work(&wq_work);
 		MALI_DEBUG_PRINT(3, ("Core scaling: Disabling one core\n"));
 	}
 
-	MALI_DEBUG_ASSERT(              1 <= num_cores_enabled);
+	MALI_DEBUG_ASSERT(1 <= num_cores_enabled);
 	MALI_DEBUG_ASSERT(num_cores_total >= num_cores_enabled);
 }
 
 static void enable_max_num_cores(void)
 {
-	if (num_cores_enabled < num_cores_total)
-	{
+	if (num_cores_enabled < num_cores_total) {
 		num_cores_enabled = num_cores_total;
 		schedule_work(&wq_work);
 		MALI_DEBUG_PRINT(3, ("Core scaling: Enabling maximum number of cores\n"));
@@ -87,7 +72,6 @@ void mali_core_scaling_sync(int num_cores)
 {
 	num_cores_enabled = num_cores;
 }
-
 
 void mali_core_scaling_term(void)
 {
@@ -115,44 +99,15 @@ void mali_core_scaling_update(struct mali_gpu_utilization_data *data)
 	/* NOTE: this function is normally called directly from the utilization callback which is in
 	 * timer context. */
 
-	if (     PERCENT_OF(90, 256) < data->utilization_pp)
-	{
+	if (PERCENT_OF(90, 256) < data->utilization_pp) {
 		enable_max_num_cores();
-	}
-	else if (PERCENT_OF(50, 256) < data->utilization_pp)
-	{
+	} else if (PERCENT_OF(50, 256) < data->utilization_pp) {
 		enable_one_core();
-	}
-	else if (PERCENT_OF(40, 256) < data->utilization_pp)
-	{
+	} else if (PERCENT_OF(40, 256) < data->utilization_pp) {
 		/* do nothing */
-	}
-	else if (PERCENT_OF( 0, 256) < data->utilization_pp)
-	{
+	} else if (PERCENT_OF(0, 256) < data->utilization_pp) {
 		disable_one_core();
-	}
-	else
-	{
+	} else {
 		/* do nothing */
 	}
 }
-
-
-static int param_set_core_scaling(const char *val, const struct kernel_param *kp)
-{
-	int ret = param_set_int(val, kp);
-
-	if (1 == mali_core_scaling_enable) {
-		mali_core_scaling_sync(mali_pp_scheduler_get_num_cores_enabled());
-	}
-	return ret;
-}
-
-static struct kernel_param_ops param_ops_core_scaling = {
-	.set = param_set_core_scaling,
-	.get = param_get_int,
-};
-
-module_param_cb(mali_core_scaling_enable, &param_ops_core_scaling, &mali_core_scaling_enable, 0644);
-MODULE_PARM_DESC(mali_core_scaling_enable, "1 means to enable core scaling policy, 0 means to disable core scaling policy");
-
