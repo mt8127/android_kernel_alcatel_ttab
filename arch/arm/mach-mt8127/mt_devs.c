@@ -1101,7 +1101,8 @@ static struct platform_device camera_sysram_dev = {
 static void cmdline_filter(struct tag *cmdline_tag, char *default_cmdline)
 {
 	const char *undesired_cmds[] = {
-	                             "console=",
+                                     "console=ttyMT1,921600n1"
+                                     "console=tty0"
                                      "root=",
                                      "lk_t=",
                                      "pl_t=",
@@ -1424,7 +1425,7 @@ void mt_fixup(struct tag *tags, char **cmdline, struct meminfo *mi)
 #endif
 	char *br_ptr;
         // This function may modify ttyMT3 to ttyMT0 if needed
-        adjust_kernel_cmd_line_setting_for_console(cmdline_tag->u.cmdline.cmdline, *cmdline);
+        //adjust_kernel_cmd_line_setting_for_console(cmdline_tag->u.cmdline.cmdline, *cmdline);
 #ifdef CONFIG_FIQ_DEBUGGER
         if ((console_ptr=strstr(*cmdline, "ttyMT")) != 0)
         {
@@ -1436,7 +1437,7 @@ void mt_fixup(struct tag *tags, char **cmdline, struct meminfo *mi)
         }
 #endif
 
-        cmdline_filter(cmdline_tag, *cmdline);
+        //cmdline_filter(cmdline_tag, *cmdline);
 		if ((br_ptr = strstr(*cmdline, "boot_reason=")) != 0) {
 			/* get boot reason */
 			g_boot_reason = br_ptr[12] - '0';

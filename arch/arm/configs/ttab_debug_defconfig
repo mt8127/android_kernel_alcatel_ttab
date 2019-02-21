@@ -430,10 +430,10 @@ CONFIG_ATAGS=y
 CONFIG_ZBOOT_ROM_TEXT=0
 CONFIG_ZBOOT_ROM_BSS=0
 # CONFIG_COMPAT_CPUINFO is not set
-CONFIG_CMDLINE="console=tty0 console=ttyMT3,921600n1 root=/dev/ram vmalloc=496M slub_max_order=0 slub_debug=O coherent_pool=3240K"
-CONFIG_CMDLINE_FROM_BOOTLOADER=y
+CONFIG_CMDLINE="console=ttyMT0,921600n1 root=/dev/ram vmalloc=496M slub_max_order=0 slub_debug=O coherent_pool=3240K root=/dev/ram androidboot.selinux=permissive loglevel=8 lcm=1-rm72013_wxga_dsi_vdo fps=6119 vram=27262976 bootprof.pl_t=4169 bootprof.lk_t=2057 boot_reason=2 androidboot.serialno=18E3BC284952295 androidboot.bootreason=rtc"
+# CONFIG_CMDLINE_FROM_BOOTLOADER is not set
 # CONFIG_CMDLINE_EXTEND is not set
-# CONFIG_CMDLINE_FORCE is not set
+CONFIG_CMDLINE_FORCE=y
 # CONFIG_XIP_KERNEL is not set
 # CONFIG_KEXEC is not set
 # CONFIG_CRASH_DUMP is not set
@@ -1374,7 +1374,7 @@ CONFIG_MTK_RTC=y
 CONFIG_MTK_SERIAL=y
 CONFIG_MTK_SERIAL_CONSOLE=y
 # CONFIG_MTK_SERIAL_MODEM_TEST is not set
-# CONFIG_MTK_UART_USB_SWITCH is not set
+CONFIG_MTK_UART_USB_SWITCH=y
 CONFIG_MTK_SIM2=y
 CONFIG_MTK_SOUND=y
 # CONFIG_MTK_AUDIO_EXTCODEC_SUPPORT is not set
@@ -1828,7 +1828,7 @@ CONFIG_CONSOLE_POLL=y
 # CONFIG_SERIAL_ALTERA_UART is not set
 # CONFIG_SERIAL_IFX6X60 is not set
 # CONFIG_SERIAL_ARC is not set
-# CONFIG_TTY_PRINTK is not set
+CONFIG_TTY_PRINTK=y
 # CONFIG_HVC_DCC is not set
 # CONFIG_IPMI_HANDLER is not set
 # CONFIG_HW_RANDOM is not set

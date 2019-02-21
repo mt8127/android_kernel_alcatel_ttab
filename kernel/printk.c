@@ -927,7 +927,7 @@ static bool printk_time = 1;
 static bool printk_time;
 #endif
 module_param_named(time, printk_time, bool, S_IRUGO | S_IWUSR);
-module_param_named(disable_uart, printk_disable_uart, bool, S_IRUGO | S_IWUSR);
+//module_param_named(disable_uart, printk_disable_uart, bool, S_IRUGO | S_IWUSR);
 
 static size_t print_time(u64 ts, char *buf)
 {

@@ -232,7 +232,7 @@ struct machine_desc * __init setup_machine_tags(phys_addr_t __atags_pointer,
 	}
 
 	/* parse_early_param needs a boot_command_line */
-	strlcpy(boot_command_line, from, COMMAND_LINE_SIZE);
+	strlcpy(boot_command_line, default_command_line, COMMAND_LINE_SIZE);
 
 	return mdesc;
 }
