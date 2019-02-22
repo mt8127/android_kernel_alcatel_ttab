@@ -1,7 +1,7 @@
 /*
  * This confidential and proprietary software may be used only as
  * authorised by a licensing agreement from ARM Limited
- * (C) COPYRIGHT 2013 ARM Limited
+ * (C) COPYRIGHT 2013, 2015 ARM Limited
  * ALL RIGHTS RESERVED
  * The entire notice above must be reproduced on all authorised
  * copies and copies may only be made to the extent permitted
@@ -59,7 +59,7 @@ int timeline_wait_wrapper(struct mali_session_data *session, _mali_uk_timeline_w
 
 	ret = mali_timeline_fence_wait(session->timeline_system, &fence, timeout);
 	status = (MALI_TRUE == ret ? 1 : 0);
-   
+
 	if (0 != put_user(status, &uargs->status)) return -EFAULT;
 
 	return 0;
@@ -78,10 +78,6 @@ int timeline_create_sync_fence_wrapper(struct mali_session_data *session, _mali_
 
 #if defined(CONFIG_SYNC)
 	sync_fd = mali_timeline_sync_fence_create(session->timeline_system, &fence);
-	if (sync_fd < 0)
-	{
-	   MALI_DEBUG_PRINT(1, ("mali_timeline_sync_fence_create() fail!, return sync_fd=%x\n", sync_fd));   
-	}
 #else
 	sync_fd = -1;
 #endif /* defined(CONFIG_SYNC) */

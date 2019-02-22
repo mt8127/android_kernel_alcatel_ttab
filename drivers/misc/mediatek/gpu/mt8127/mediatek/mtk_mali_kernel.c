@@ -1,11 +1,11 @@
+
 #include "mtk_mali_kernel.h"
 #include "mali_kernel_common.h" /*for mali printf*/
-#include <mach/mt_clkmgr.h>     /*For MFG sub-system clock control API*/
-#include <linux/earlysuspend.h> /*For early suspend*/
-#include <mach/mt_clkmgr.h>
+/*#include <linux/earlysuspend.h>*/ /*For early suspend*/
 
 void MTKMALI_DumpRegister( void )
 {
+#if 0
 #define DUMP_REG_INFO( addr )   MALIK_MSG("REG: %s = 0x%08x\n", #addr, M_READ32( addr, 0 ))
     unsigned long dummy;
 
@@ -26,10 +26,10 @@ void MTKMALI_DumpRegister( void )
     DUMP_REG_INFO( REG_MFG_DEBUG_SEL );
 
     MALIK_MSG("---------------------------:\n"); 
+#endif // 0  
 
 
    /*Dump Call stack*/
     dump_stack();
-   
 }
 
