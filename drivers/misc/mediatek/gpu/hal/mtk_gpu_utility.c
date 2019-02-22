@@ -1,6 +1,6 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <mt-plat/mtk_gpu_utility.h>
+#include <linux/mtk_gpu_utility.h>
 
 unsigned int (*mtk_get_gpu_memory_usage_fp)(void) = NULL;
 EXPORT_SYMBOL(mtk_get_gpu_memory_usage_fp);

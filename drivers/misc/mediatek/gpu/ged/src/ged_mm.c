@@ -10,7 +10,7 @@
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
-#include <mt-plat/mtk_gpu_utility.h>
+#include <linux/mtk_gpu_utility.h>
 
 #include "ged_base.h"
 #include "ged_mm.h"

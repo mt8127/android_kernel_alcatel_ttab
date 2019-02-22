@@ -8,7 +8,7 @@
 //#include <linux/xlog.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
-#include <mt-plat/mtk_gpu_utility.h>
+#include <linux/mtk_gpu_utility.h>
 
 #include "ged_base.h"
 #include "ged_hal.h"

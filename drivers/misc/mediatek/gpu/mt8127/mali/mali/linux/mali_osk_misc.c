@@ -20,7 +20,9 @@
 #include <linux/module.h>
 #include "mali_osk.h"
 
+#ifdef CONFIG_MALI_DT
 extern void dump_clk_state(void);
+#endif
 
 #if !defined(CONFIG_MALI_QUIET)
 void _mali_osk_dbgmsg(const char *fmt, ...)
@@ -64,7 +66,9 @@ void _mali_osk_abort(void)
 
 void _mali_osk_break(void)
 {
+#ifdef CONFIG_MALI_DT
 	dump_clk_state();
+#endif
 	_mali_osk_abort();
 }
 

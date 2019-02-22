@@ -30,18 +30,26 @@
 #include <linux/proc_fs.h>
 #else
 #include "mach/mt_gpufreq.h"
+#include "mach/mt_clkmgr.h"
 #endif
 
-/*
+
 extern unsigned long (*mtk_thermal_get_gpu_loading_fp) (void);
 extern unsigned long (*mtk_get_gpu_loading_fp) (void);
-*/
+
 
 static int bPoweroff;
 unsigned int current_sample_utilization;
 
 extern u32 get_devinfo_with_index(u32 index);
 static int _need_univpll;
+
+#define MFG_SPD_MASK 0x80000
+
+#define mfg_pwr_unlock(flags) \
+do { \
+    spin_unlock_irqrestore(&mali_pwr_lock, flags); \
+} while(0)
 
 #ifdef CONFIG_MALI_DT
 
@@ -59,7 +67,7 @@ static int _need_univpll;
 #define MFG_CG_CLR 0x8
 #define MFG_DEBUG_SEL 0x180
 #define MFG_DEBUG_STAT 0x184
-#define MFG_SPD_MASK 0x80000
+//#define MFG_SPD_MASK 0x80000
 #define MFG_GPU_QUAL_MASK 0x3
 
 #define MFG_READ32(r) __raw_readl((void __iomem *)((unsigned long)mfg_start + (r)))
@@ -356,24 +364,42 @@ int mali_clk_disable(struct device *device)
 }
 #endif
 
+static u32 check_need_univpll() {
+    u32 info = *(volatile u32 *)0xf0206174;
+	/*get_devinfo_with_index (15);*/
+    /*if(0x0 == (info & (0x1 << 31))) { t or b?*/
+        /*T*/
+	u32 devinfo = *(volatile u32* )0xf0206040;/*get_devinfo_with_index(3);*/
+    if(devinfo & 0x80000) {
+        MALI_DEBUG_PRINT(1, ("GPU use univ with devinfo 0x%x\n", devinfo));
+        return 1;
+    } else {
+#ifdef MTK_MALI_UNIV
+        MALI_DEBUG_PRINT(1, ("GPU use univ with MTK_MALI_UNIV\n"));
+        return 1;
+#else
+        return 0;
+#endif  
+    }
+    
+}
+
 int mali_pmm_init(struct platform_device *device)
 {
 	int err = 0;
-	u32 idx = 0;
+    
 	MALI_DEBUG_PRINT(1, ("%s\n", __FUNCTION__));
-	idx = get_devinfo_with_index(3);
-	if (idx & MFG_SPD_MASK)
-		_need_univpll = 1;
-	else
-		_need_univpll = 0;
-	MALI_DEBUG_PRINT(2, ("need univ src pll idx0x%d %d\n", idx, _need_univpll));
+    
+	_need_univpll = check_need_univpll();
+    
+	MALI_DEBUG_PRINT(1, ("need univ src pll %d\n", _need_univpll));
 
 	/* Because clkmgr may do 'default on' for some clock.
 	   We check the clock state on init and set power state atomic.
 	 */
 
 	MALI_DEBUG_PRINT(1, ("MFG G3D init enable if it is on0621\n"));
-#ifndef CONFIG_MALI_DT
+
 	mtk_thermal_get_gpu_loading_fp = gpu_get_current_utilization;
 	mtk_get_gpu_loading_fp = gpu_get_current_utilization;
 	if (clock_is_on(MT_CG_MFG_G3D)) {
@@ -388,12 +414,7 @@ int mali_pmm_init(struct platform_device *device)
 		MALI_DEBUG_PRINT(1, ("MFG G3D init default off\n"));
 		atomic_set((atomic_t *) & bPoweroff, 1);
 	}
-#else
-	err = mali_mfgsys_init(device);
-	if (err)
-		return err;
-	atomic_set((atomic_t *) & bPoweroff, 1);
-#endif
+    
 	mali_platform_power_mode_change(&(device->dev), MALI_POWER_MODE_ON);
 
 	return err;
@@ -404,7 +425,9 @@ void mali_pmm_deinit(struct platform_device *device)
 	MALI_DEBUG_PRINT(1, ("%s\n", __FUNCTION__));
 
 	mali_platform_power_mode_change(&device->dev, MALI_POWER_MODE_DEEP_SLEEP);
+#ifdef CONFIG_MALI_DT
 	mali_mfgsys_deinit(device);
+#endif
 }
 
 unsigned int gpu_get_current_utilization(void)
