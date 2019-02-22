@@ -1,7 +1,7 @@
 /*
  * This confidential and proprietary software may be used only as
  * authorised by a licensing agreement from ARM Limited
- * (C) COPYRIGHT 2009-2010, 2012-2013 ARM Limited
+ * (C) COPYRIGHT 2009-2010, 2012-2015 ARM Limited
  * ALL RIGHTS RESERVED
  * The entire notice above must be reproduced on all authorised
  * copies and copies may only be made to the extent permitted
@@ -25,14 +25,14 @@ extern "C" {
 
 
 
-int ump_get_api_version_wrapper(u32 __user * argument, struct ump_session_data * session_data);
-int ump_release_wrapper(u32 __user * argument, struct ump_session_data  * session_data);
-int ump_size_get_wrapper(u32 __user * argument, struct ump_session_data  * session_data);
-int ump_msync_wrapper(u32 __user * argument, struct ump_session_data  * session_data);
-int ump_cache_operations_control_wrapper(u32 __user * argument, struct ump_session_data  * session_data);
-int ump_switch_hw_usage_wrapper(u32 __user * argument, struct ump_session_data  * session_data);
-int ump_lock_wrapper(u32 __user * argument, struct ump_session_data  * session_data);
-int ump_unlock_wrapper(u32 __user * argument, struct ump_session_data  * session_data);
+int ump_get_api_version_wrapper(u32 __user *argument, struct ump_session_data *session_data);
+int ump_release_wrapper(u32 __user *argument, struct ump_session_data   *session_data);
+int ump_size_get_wrapper(u32 __user *argument, struct ump_session_data   *session_data);
+int ump_msync_wrapper(u32 __user *argument, struct ump_session_data   *session_data);
+int ump_cache_operations_control_wrapper(u32 __user *argument, struct ump_session_data   *session_data);
+int ump_switch_hw_usage_wrapper(u32 __user *argument, struct ump_session_data   *session_data);
+int ump_lock_wrapper(u32 __user *argument, struct ump_session_data   *session_data);
+int ump_unlock_wrapper(u32 __user *argument, struct ump_session_data   *session_data);
 
 
 

@@ -1,7 +1,7 @@
 /*
  * This confidential and proprietary software may be used only as
  * authorised by a licensing agreement from ARM Limited
- * (C) COPYRIGHT 2011-2013 ARM Limited
+ * (C) COPYRIGHT 2011-2015 ARM Limited
  * ALL RIGHTS RESERVED
  * The entire notice above must be reproduced on all authorised
  * copies and copies may only be made to the extent permitted
@@ -14,7 +14,7 @@
 #include "mali_uk_types.h"
 
 static u32 gp_counter_src0 = MALI_HW_CORE_NO_COUNTER;      /**< Performance counter 0, MALI_HW_CORE_NO_COUNTER for disabled */
-static u32 gp_counter_src1 = MALI_HW_CORE_NO_COUNTER;		/**< Performance counter 1, MALI_HW_CORE_NO_COUNTER for disabled */
+static u32 gp_counter_src1 = MALI_HW_CORE_NO_COUNTER;           /**< Performance counter 1, MALI_HW_CORE_NO_COUNTER for disabled */
 
 struct mali_gp_job *mali_gp_job_create(struct mali_session_data *session, _mali_uk_gp_start_job_s *uargs, u32 id, struct mali_timeline_tracker *pp_tracker)
 {
@@ -82,6 +82,7 @@ void mali_gp_job_delete(struct mali_gp_job *job)
 {
 	MALI_DEBUG_ASSERT_POINTER(job);
 	MALI_DEBUG_ASSERT(NULL == job->pp_tracker);
+	MALI_DEBUG_ASSERT(_mali_osk_list_empty(&job->list));
 
 	/* de-allocate the pre-allocated oom notifications */
 	if (NULL != job->oom_notification) {
@@ -94,6 +95,31 @@ void mali_gp_job_delete(struct mali_gp_job *job)
 	}
 
 	_mali_osk_free(job);
+}
+
+void mali_gp_job_list_add(struct mali_gp_job *job, _mali_osk_list_t *list)
+{
+	struct mali_gp_job *iter;
+	struct mali_gp_job *tmp;
+
+	MALI_DEBUG_ASSERT_POINTER(job);
+	MALI_DEBUG_ASSERT_SCHEDULER_LOCK_HELD();
+
+	/* Find position in list/queue where job should be added. */
+	_MALI_OSK_LIST_FOREACHENTRY_REVERSE(iter, tmp, list,
+					    struct mali_gp_job, list) {
+
+		/* A span is used to handle job ID wrapping. */
+		bool job_is_after = (mali_gp_job_get_id(job) -
+				     mali_gp_job_get_id(iter)) <
+				    MALI_SCHEDULER_JOB_ID_SPAN;
+
+		if (job_is_after) {
+			break;
+		}
+	}
+
+	_mali_osk_list_add(&job->list, &iter->list);
 }
 
 u32 mali_gp_job_get_gp_counter_src0(void)

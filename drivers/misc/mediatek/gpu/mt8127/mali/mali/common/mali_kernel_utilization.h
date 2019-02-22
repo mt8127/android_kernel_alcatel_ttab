@@ -1,7 +1,7 @@
 /*
  * This confidential and proprietary software may be used only as
  * authorised by a licensing agreement from ARM Limited
- * (C) COPYRIGHT 2010-2013 ARM Limited
+ * (C) COPYRIGHT 2010-2015 ARM Limited
  * ALL RIGHTS RESERVED
  * The entire notice above must be reproduced on all authorised
  * copies and copies may only be made to the extent permitted
@@ -13,17 +13,6 @@
 
 #include <linux/mali/mali_utgard.h>
 #include "mali_osk.h"
-
-#define MALI_UTILIZATION_BW_CTR_SRC0 (0)  /* Active cycles */
-#define MALI_UTILIZATION_BW_CTR_SRC1 (37) /* Inctructions completed */
-
-void mali_utilization_bw_report_counters(u32 active, u32 completed);
-
-/*
- */
-u32 mali_utilization_bw_get_period(void);
-
-extern void (*mali_utilization_callback)(struct mali_gpu_utilization_data *data);
 
 /**
  * Initialize/start the Mali GPU utilization metrics reporting.
@@ -40,10 +29,7 @@ void mali_utilization_term(void);
 /**
  * Check if Mali utilization is enabled
  */
-MALI_STATIC_INLINE mali_bool mali_utilization_enabled(void)
-{
-	return (NULL != mali_utilization_callback);
-}
+mali_bool mali_utilization_enabled(void);
 
 /**
  * Should be called when a job is about to execute a GP job
@@ -66,9 +52,21 @@ void mali_utilization_pp_start(void);
 void mali_utilization_pp_end(void);
 
 /**
- * Should be called to stop the utilization timer during system suspend
+ * Should be called to calcution the GPU utilization
  */
-void mali_utilization_suspend(void);
+struct mali_gpu_utilization_data *mali_utilization_calculate(u64 *start_time, u64 *time_period, mali_bool *need_add_timer);
+
+_mali_osk_spinlock_irq_t *mali_utilization_get_lock(void);
+
+void mali_utilization_platform_realize(struct mali_gpu_utilization_data *util_data);
+
+void mali_utilization_data_lock(void);
+
+void mali_utilization_data_unlock(void);
+
+void mali_utilization_data_assert_locked(void);
+
+void mali_utilization_reset(void);
 
 
 #endif /* __MALI_KERNEL_UTILIZATION_H__ */

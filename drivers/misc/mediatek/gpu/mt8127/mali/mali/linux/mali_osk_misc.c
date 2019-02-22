@@ -1,7 +1,7 @@
 /*
  * This confidential and proprietary software may be used only as
  * authorised by a licensing agreement from ARM Limited
- * (C) COPYRIGHT 2008-2013 ARM Limited
+ * (C) COPYRIGHT 2008-2015 ARM Limited
  * ALL RIGHTS RESERVED
  * The entire notice above must be reproduced on all authorised
  * copies and copies may only be made to the extent permitted
@@ -16,22 +16,23 @@
 #include <asm/uaccess.h>
 #include <asm/cacheflush.h>
 #include <linux/sched.h>
+#include <linux/seq_file.h>
 #include <linux/module.h>
 #include "mali_osk.h"
-#include "mt_reg_base.h"
 
-extern void smi_dumpDebugMsg(void);
-extern int m4u_dump_debug_registers(void);;
+extern void dump_clk_state(void);
 
-void _mali_osk_dbgmsg( const char *fmt, ... )
+#if !defined(CONFIG_MALI_QUIET)
+void _mali_osk_dbgmsg(const char *fmt, ...)
 {
 	va_list args;
 	va_start(args, fmt);
 	vprintk(fmt, args);
 	va_end(args);
 }
+#endif /* !defined(CONFIG_MALI_QUIET) */
 
-u32 _mali_osk_snprintf( char *buf, u32 size, const char *fmt, ... )
+u32 _mali_osk_snprintf(char *buf, u32 size, const char *fmt, ...)
 {
 	int res;
 	va_list args;
@@ -43,36 +44,27 @@ u32 _mali_osk_snprintf( char *buf, u32 size, const char *fmt, ... )
 	return res;
 }
 
-#define CLK_CFG_0           (INFRA_BASE + 0x0040)
-#define VENCPLL_CON0        (DDRPHY_BASE+0x800)
-#define MMPLL_CON0          (APMIXEDSYS_BASE + 0x0230)
+void _mali_osk_ctxprintf(_mali_osk_print_ctx *print_ctx, const char *fmt, ...)
+{
+	va_list args;
+	char buf[512];
+
+	va_start(args, fmt);
+	vscnprintf(buf, 512, fmt, args);
+	seq_printf(print_ctx, buf);
+	va_end(args);
+}
 
 void _mali_osk_abort(void)
 {
-    int index;
-
 	/* make a simple fault by dereferencing a NULL pointer */
 	dump_stack();
-
-    for (index = 0; index < 5; index++)
-    {
-        MALI_DEBUG_PRINT(2, ("=== [MALI] PLL Dump %d ===\n", index));       
-        MALI_DEBUG_PRINT(2, ("CLK_CFG_0: 0x%08x\n", *((volatile unsigned int*)CLK_CFG_0)));
-        MALI_DEBUG_PRINT(2, ("VENCPLL_CON0: 0x%08x\n", *((volatile unsigned int*)VENCPLL_CON0)));
-        MALI_DEBUG_PRINT(2, ("MMPLL_CON0: 0x%08x\n", *((volatile unsigned int*)MMPLL_CON0)));
-
-        MALI_DEBUG_PRINT(2, ("=== [MALI] SMI Dump %d ===\n", index));
-        smi_dumpDebugMsg();
-
-        MALI_DEBUG_PRINT(2, ("=== [MALI] 8127 m4u not provide API? M4U Dump %d ===\n", index));
-        /*m4u_dump_debug_registers();*/
-    }
-
-	*(int *)0 = 0;
+	 *(int *)0 = 0; 
 }
 
 void _mali_osk_break(void)
 {
+	dump_clk_state();
 	_mali_osk_abort();
 }
 
@@ -81,6 +73,12 @@ u32 _mali_osk_get_pid(void)
 	/* Thread group ID is the process ID on Linux */
 	return (u32)current->tgid;
 }
+
+char *_mali_osk_get_comm(void)
+{
+	return (char *)current->comm;
+}
+
 
 u32 _mali_osk_get_tid(void)
 {
