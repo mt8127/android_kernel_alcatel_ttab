@@ -15,7 +15,7 @@
 
 /* Make sure debug is defined when it should be */
 #ifndef DEBUG
-#if defined(_DEBUG)
+#if 1
 #define DEBUG
 #endif
 #endif

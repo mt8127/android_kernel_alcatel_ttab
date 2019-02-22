@@ -39,7 +39,7 @@
 #include "mali_memory.h"
 #include "mali_memory_dma_buf.h"
 #include "mali_memory_manager.h"
-#include "mt_smi.h"
+
 #include "platform_pmm.h"
 
 #if defined(CONFIG_MALI400_INTERNAL_PROFILING)
@@ -464,10 +464,12 @@ static int mali_probe(struct platform_device *pdev)
 	int err;
 
 	MALI_DEBUG_PRINT(2, ("mali_probe(): Called for platform device %s\n", pdev->name));
+#ifdef CONFIG_MALI_DT
 	if(!mtk_mfg_is_ready()){
 		pr_warn("mfg is not ready, Mali id defer\n");
 		return -EPROBE_DEFER;
 	}
+#endif
 	if (NULL != mali_platform_device) {
 		/* Already connected to a device, return error */
 		MALI_PRINT_ERROR(("mali_probe(): The Mali driver is already connected with a Mali device."));

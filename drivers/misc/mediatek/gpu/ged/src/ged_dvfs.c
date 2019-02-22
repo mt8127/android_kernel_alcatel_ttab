@@ -7,7 +7,7 @@
 #endif
 
 #include <trace/events/mtk_events.h>
-#include <mt-plat/mtk_gpu_utility.h>
+#include <linux/mtk_gpu_utility.h>
 
 #include <asm/siginfo.h>
 #include <linux/sched.h>
