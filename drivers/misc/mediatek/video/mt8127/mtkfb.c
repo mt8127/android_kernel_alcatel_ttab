@@ -2335,8 +2335,8 @@ static int mtkfb_ioctl(struct file *file, struct fb_info *info, unsigned int cmd
     MTKFB_FUNC();
     /// M: dump debug mmprofile log info
     MMProfileLogEx(MTKFB_MMP_Events.IOCtrl, MMProfileFlagPulse, _IOC_NR(cmd), arg);
-    pr_info("mtkfb_ioctl, info=0x%08x, cmd=0x%08x(%s), arg=0x%08x\n", (unsigned int)info, 
-        (unsigned int)cmd, _mtkfb_ioctl_spy(cmd), (unsigned int)arg);
+    //pr_info("mtkfb_ioctl, info=0x%08x, cmd=0x%08x(%s), arg=0x%08x\n", (unsigned int)info, 
+    //    (unsigned int)cmd, _mtkfb_ioctl_spy(cmd), (unsigned int)arg);
 
     switch (cmd)
     {
